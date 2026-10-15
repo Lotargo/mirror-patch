@@ -153,6 +153,8 @@ def prompt_yn(question):
 
 def confirmed(question):
     """Возвращает True, если пользователь ответил 'y'."""
+    if os.environ.get("AUTO_CONFIRM") == "1":
+        return True
     return prompt_yn(question) in ("y", "yes", "\u0434", "\u0434\u0430")
 
 

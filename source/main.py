@@ -7,6 +7,34 @@ from patcher.cli import run_cli, confirmed
 
 
 if __name__ == "__main__":
+    if "--check" in sys.argv or "--status" in sys.argv:
+        from autopatch import get_components_status
+        import json
+        status = get_components_status()
+        if "--json" in sys.argv:
+            print(json.dumps(status, indent=2))
+        else:
+            print(f"Components checked: {status['installed_count']} installed")
+            for c in status["components"]:
+                if c["installed"]:
+                    state = "PATCHED" if c["patched"] else "NOT PATCHED"
+                    print(f"  [{state}] {c['name']} -> {c['path']}")
+                else:
+                    print(f"  [NOT INSTALLED] {c['name']}")
+            print(f"All patched: {status['all_patched']}")
+        sys.exit(0 if status["all_patched"] else 2)
+
+    if "--check-and-patch" in sys.argv:
+        from autopatch import check_and_patch
+        import json
+        result = check_and_patch()
+        if "--json" in sys.argv:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"Check and patch result: {'SUCCESS' if result['success'] else 'FAILED'}")
+            print(f"Repatched actions needed: {result['repatched']}")
+        sys.exit(0 if result["success"] else 2)
+
     if "--auto" in sys.argv:
         from autopatch import run_autopatch
         sys.exit(0 if run_autopatch() >= 0 else 1)

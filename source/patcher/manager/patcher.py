@@ -276,7 +276,7 @@ def do_patch_manager(path):
             if attempt == 0:
                 warn("Binary is locked (Antigravity Manager is running).")
                 if confirmed("Would you like to automatically close running Antigravity processes and retry?"):
-                    terminate_processes(["Antigravity", "Antigravity IDE", "antigravity", "antigravity-ide", "language_server"])
+                    terminate_processes(["Antigravity", "antigravity", "language_server"])
                     import time
                     time.sleep(1.5)
                     continue
@@ -353,7 +353,7 @@ def do_patch_manager(path):
                     continue
                 warn(f"Permission denied (file locked): {e}")
                 if confirmed("Would you like to automatically close running processes and retry?"):
-                    terminate_processes(["Antigravity", "Antigravity IDE", "antigravity", "antigravity-ide", "language_server"])
+                    terminate_processes(["Antigravity", "antigravity", "language_server"])
                     import time
                     time.sleep(1.5)
                     continue
