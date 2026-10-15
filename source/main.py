@@ -7,6 +7,10 @@ from patcher.cli import run_cli, confirmed
 
 
 if __name__ == "__main__":
+    if "--auto" in sys.argv:
+        from autopatch import run_autopatch
+        sys.exit(0 if run_autopatch() >= 0 else 1)
+
     setup_console()
     if os.name == "nt" and os.environ.get("SKIP_ELEVATION") != "1" and not is_admin():
         if run_as_admin():

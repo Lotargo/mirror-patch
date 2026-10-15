@@ -78,7 +78,9 @@ def _download(url, dest, expected_size=None, attempts=3):
                 os.unlink(dest)
             except OSError:
                 pass
-    raise error
+    if error is not None:
+        raise error
+    raise RuntimeError("download failed without explicit exception")
 
 
 def _sha256(path):
