@@ -31,7 +31,9 @@
 
 MirrorPatch — поддерживаемая редакция патчера Antigravity. Исправляет устаревший путь авторизации и генерации, выбирает experience модели из серверной конфигурации и восстанавливает загрузку квот в CLI, IDE и Antigravity 2.0 / Manager.
 
-> **Выпуск [1.4.0](https://github.com/Lotargo/mirror-patch/releases/tag/v1.4.0).** Проверены реальная генерация, сохранённый вход после перезапуска и отображение квот в обоих GUI-приложениях. Неизвестные сборки отклоняются до изменения файлов.
+> **Выпуск [1.5.0](https://github.com/Lotargo/mirror-patch/releases/tag/v1.5.0).** Native patch v4: Flash Lite, image-experiences и исправленная маршрутизация STT/Voice. Сохранены вход, генерация и квоты в GUI. Неизвестные сборки отклоняются до изменения файлов.
+
+В **native patch v4** прямые SDK-вызовы выбирают Flash Lite и image-experiences из серверного каталога. STT и Voice/TTS используют отдельные production-маршруты; неизвестный model ID отклоняется без подстановки. Списки UI не расширяются. Результаты и ограничения Tab — в [отчёте SDK и Voice](docs/sdk-models-and-voice-patch-2026-11-15.md).
 
 ## Что исправляет MirrorPatch
 
@@ -94,8 +96,10 @@ $hub = Join-Path $env:USERPROFILE '.gemini/bin/agy.exe'
 | --- | --- |
 | Установка, профили, CLI и откат | [Руководство](docs/manual.md) |
 | Сборка EXE и выпуск | [Порядок релиза](releases/README.md) |
-| Изменения версии 1.4.0 | [Changelog](CHANGELOG.md) |
+| Изменения версии 1.5.0 | [Changelog](CHANGELOG.md) |
 | Проверка GUI и причина зависания квот | [Отчёт](docs/gui-aicode-and-quota-patch-2026-11-15.md) |
+| Прямой SDK, Flash Lite, image, STT, Voice/TTS и отказ Tab | [Patch v4](docs/sdk-models-and-voice-patch-2026-11-15.md) |
+| Сборка и проверка выпуска 1.5.0 | [Отчёт выпуска](docs/release-1.5.0-2026-11-16.md) |
 | Исследование рабочего free-tier пути | [AICode и бесплатный доступ](docs/aicode-free-access-working-path-2026-11-15.md) |
 | Ошибка или предложение | [GitHub Issues](https://github.com/Lotargo/mirror-patch/issues) |
 

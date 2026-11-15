@@ -49,6 +49,15 @@ def build(output: Path, work: Path):
             shutil.copyfile(p, runtime / p.name)
     prebuilt = runtime / "prebuilt"
     prebuilt.mkdir(exist_ok=True)
+    # A release must not silently bundle launchers left by an older patch.
+    expected_launchers = {
+        f"{profile}-{native_hash}.exe"
+        for profile, hashes in PREBUILT_NATIVE_HASHES.items()
+        for native_hash in hashes
+    }
+    for previous in prebuilt.glob("*.exe"):
+        if previous.name not in expected_launchers:
+            previous.unlink()
     manifest = {"runtime_sha256": runtime_fingerprint(), "assets": {}}
     for profile, hashes in PREBUILT_NATIVE_HASHES.items():
         for native_hash in hashes:

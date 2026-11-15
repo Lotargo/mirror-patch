@@ -1,7 +1,7 @@
 # Выпуск MirrorPatch
 
 Версия хранится в `source/patcher/constants.py`; PE version resource —
-`source/version.txt`. Теги имеют вид `v1.4.0`. Установка из готового EXE не требует
+`source/version.txt`. Теги имеют вид `v1.5.0`. Установка из готового EXE не требует
 Python и Go; на сборочной машине они нужны.
 
 ## Сборка Windows x64
@@ -18,7 +18,7 @@ manifest в PyInstaller onefile EXE. Google native EXE в пакет не вкл
 
 - `MirrorPatch-windows-x64.exe` — самостоятельный патчер;
 - `MirrorPatch-windows-x64.zip` — EXE, README, руководство и лицензии;
-- `MirrorPatch-v1.4.0-source.zip` — соответствующий исходный код из Git;
+- `MirrorPatch-v1.5.0-source.zip` — соответствующий исходный код из Git;
 - `SHA256SUMS.txt` — SHA-256 каждого пакета.
 
 Исходный ZIP формируется из текущего commit; перед релизной упаковкой рабочее
@@ -38,6 +38,6 @@ manifest в PyInstaller onefile EXE. Google native EXE в пакет не вкл
 ## Публикация
 
 После коммитов кода и оформления отправить `main`, создать тег, загрузить assets
-и release notes из `releases/v1.4.0.md`. У выпуска должна быть ссылка на точный
+и release notes из `releases/v1.5.0.md`. У выпуска должна быть ссылка на точный
 commit. Повторная загрузка assets под существующим тегом не является новым
 релизом: исправления выпускаются с новым номером.

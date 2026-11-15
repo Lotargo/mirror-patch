@@ -6,7 +6,11 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "source"))
+from patcher.constants import VERSION
 
 
 def sha(path):
@@ -36,7 +40,7 @@ def main():
             if process.returncode not in codes:
                 raise AssertionError(f"Frozen command failed: {arguments[0]} exit {process.returncode}: {process.stdout} {process.stderr}")
             return process.stdout
-        assert run(["--version"]).strip() == "MirrorPatch 1.4.0"
+        assert run(["--version"]).strip() == f"MirrorPatch {VERSION}"
         assert "--agy-aicode" in run(["--help"])
         status = json.loads(run(["--check", "--json"], codes=(0,2)))
         assert isinstance(status.get("components"), list)
