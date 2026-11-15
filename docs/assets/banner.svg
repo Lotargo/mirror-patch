@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="420" viewBox="0 0 1440 420" role="img" aria-labelledby="title desc">
+  <title id="title">MirrorPatch — совместимость Antigravity</title>
+  <desc id="desc">CLI, IDE и Manager. Вход, модели и квоты через AICode, с резервной копией и откатом.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#221c3b"/><stop offset=".6" stop-color="#121026"/><stop offset="1" stop-color="#241936"/></linearGradient>
+    <radialGradient id="halo"><stop stop-color="#a47fe7" stop-opacity=".25"/><stop offset="1" stop-color="#a47fe7" stop-opacity="0"/></radialGradient>
+    <linearGradient id="glass" x2=".8" y2="1"><stop stop-color="#ac94ee" stop-opacity=".3"/><stop offset="1" stop-color="#6951aa" stop-opacity=".06"/></linearGradient>
+    <clipPath id="clip"><rect width="1440" height="420" rx="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="1440" height="420" fill="url(#bg)"/>
+    <ellipse cx="1130" cy="200" rx="400" ry="330" fill="url(#halo)"/>
+    <g fill="none" stroke="#c29aff"><circle cx="1120" cy="206" r="151" opacity=".08"/><circle cx="1120" cy="206" r="128" opacity=".16"/></g>
+    <g transform="translate(1008 94)">
+      <rect x="-24" y="24" width="224" height="224" rx="28" fill="url(#glass)" stroke="#c29aff" stroke-opacity=".25"/>
+      <rect width="224" height="224" rx="28" fill="#221b3a" stroke="#c29aff" stroke-opacity=".65"/>
+      <path d="M47 157V67l65 63 65-63v90" fill="none" stroke="#e4ccff" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M79 173h66" fill="none" stroke="#aa85e2" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="190" cy="188" r="26" fill="#302848" stroke="#b897ed"/>
+      <path d="m179 188 8 8 15-17" fill="none" stroke="#d5c0f5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g font-family="Segoe UI, Arial, sans-serif">
+      <text x="76" y="94" fill="#baa5d9" font-size="16" font-weight="600" letter-spacing="2">СОВМЕСТИМОСТЬ ANTIGRAVITY ДЛЯ WINDOWS</text>
+      <text x="72" y="204" fill="#f4f0ff" font-size="88" font-weight="700">MirrorPatch</text>
+      <text x="76" y="254" fill="#c7badb" font-size="27">Вход, модели и квоты — через AICode.</text>
+      <g font-size="17" fill="#dfd1f2">
+        <rect x="76" y="306" width="176" height="40" rx="20" fill="#c29aff" fill-opacity=".08" stroke="#c29aff" stroke-opacity=".22"/>
+        <text x="164" y="332" text-anchor="middle">CLI · IDE · Manager</text>
+        <rect x="264" y="306" width="132" height="40" rx="20" fill="#c29aff" fill-opacity=".08" stroke="#c29aff" stroke-opacity=".22"/>
+        <text x="330" y="332" text-anchor="middle">Free-tier</text>
+        <rect x="408" y="306" width="184" height="40" rx="20" fill="#c29aff" fill-opacity=".08" stroke="#c29aff" stroke-opacity=".22"/>
+        <text x="500" y="332" text-anchor="middle">Резервная копия</text>
+      </g>
+    </g>
+    <rect x=".5" y=".5" width="1439" height="419" rx="23.5" fill="none" stroke="#c29aff" stroke-opacity=".17"/>
+  </g>
+</svg>

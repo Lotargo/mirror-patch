@@ -259,39 +259,26 @@ def print_target_info(main_js_path, manager_path="", agy_path="", vscode_path=""
 def show_about():
     clear_screen()
     print_banner()
-    print_menu_section("ABOUT OPEN AG PATCHER")
+    print_menu_section("ABOUT MIRRORPATCH")
     print()
-    print(f"  {color('Open AG Patcher', COLOR_BOLD, COLOR_CYAN)} v{VERSION}")
-    print("  Open-source region lock bypass tool for Antigravity products:")
-    print("  Antigravity IDE, Antigravity 2.0 (language_server), and Antigravity CLI (agy).")
-    print("  Allows using Antigravity without VPN or changing Google account region.")
+    print(f"  {color('MirrorPatch', COLOR_BOLD, COLOR_CYAN)} v{VERSION}")
+    print("  Maintained Antigravity compatibility patcher by Lotargo.")
+    print("  Personal AICode access for CLI, IDE and Manager, with server model selection and quotas.")
     print()
     hint("Features:")
-    print(f"   • {color('Antigravity IDE patch', COLOR_GREEN)} — main.js isGoogleInternal bypass")
-    print(f"   • {color('Antigravity 2.0 patch', COLOR_GREEN)} — language_server binary patch")
-    print(f"   • {color('Antigravity CLI patch', COLOR_GREEN)} — agy eligibility check bypass")
-    print(f"   • {color('Backup & Restore', COLOR_GREEN)}     — safe, fully reversible modifications")
+    print(f"   • {color('AICode profiles', COLOR_GREEN)} — audited Windows x64 builds; menu option 13")
+    print(f"   • {color('Diagnostics', COLOR_GREEN)}     — file hashes and separate Hub authentication checks")
+    print(f"   • {color('Backup & Restore', COLOR_GREEN)} — original files retained for rollback")
     print()
-    hint("Author & Community:")
-    tg_main = link("https://t.me/avencoresyt", "t.me/avencoresyt", COLOR_CYAN, COLOR_UNDERLINE)
-    tg_chat = link("https://t.me/avencoreschat", "t.me/avencoreschat", COLOR_CYAN, COLOR_UNDERLINE)
-    yt = link("https://youtube.com/@avencores", "youtube.com/@avencores", COLOR_CYAN, COLOR_UNDERLINE)
-    vk = link("https://vk.ru/avencoresreuploads", "vk.ru/avencoresreuploads", COLOR_CYAN, COLOR_UNDERLINE)
-    dz = link("https://dzen.ru/avencores", "dzen.ru/avencores", COLOR_CYAN, COLOR_UNDERLINE)
-    card_num = link("data:text/plain;charset=utf-8,2202%202050%201464%204675", "2202 2050 1464 4675", COLOR_BOLD, COLOR_WHITE, COLOR_UNDERLINE)
-    attr_link = link("https://github.com/QNIX-Dev/eligibility-antigravity-patcher", "eligibility-antigravity-patcher", COLOR_CYAN, COLOR_UNDERLINE)
-
-    print(f"   • Author:   {color('AvenCores', COLOR_YELLOW)}")
-    print(f"   • Telegram: {tg_main} (Chat: {tg_chat})")
-    print(f"   • YouTube:  {yt}")
-    print(f"   • VK:       {vk}")
-    print(f"   • Dzen:     {dz}")
+    hint("Project:")
+    print("   https://github.com/Lotargo/mirror-patch")
+    print("   Issues and releases are maintained in this repository.")
     print()
-    hint("Support Author:")
-    print(f"   • {color('SBER:', COLOR_GREEN)} {card_num}")
+    hint("Support development:")
+    print("   YooMoney: 4100 1151 9523 9085 — https://yoomoney.ru/transfer")
     print()
     hint("License:")
-    print(f"   • GPL-3.0 License (Attribution: {attr_link} / MIT)")
+    print("   GPL-3.0. Upstream attribution: see THIRD_PARTY_NOTICES.md.")
 
 
 
@@ -482,6 +469,7 @@ def run_cli():
 
     while True:
         print_menu_section("PATCH")
+        print_menu_row("13", "AICode access + quotas", "Windows CLI / IDE / Manager", COLOR_CYAN)
         print_menu_row("1", "Antigravity IDE patch", "bypass region lock (isGoogleInternal)", COLOR_GREEN)
         print_menu_row("2", "Antigravity 2.0 patch", "patch language_server binary", COLOR_GREEN)
         print_menu_row("3", "Antigravity CLI (agy) patch", "unlock agy tool", COLOR_GREEN)
@@ -515,7 +503,7 @@ def run_cli():
                                vscode_agy_path, show_search_line=searched)
             continue
 
-        valid_choices = {str(i) for i in range(1, 13)}
+        valid_choices = {str(i) for i in range(1, 14)}
         if choice not in valid_choices:
             err("Invalid choice")
             print()
@@ -528,7 +516,10 @@ def run_cli():
         clear_screen()
         print_banner()
 
-        if choice == "1":
+        if choice == "13":
+            from patcher.agy.menu import run_aicode_menu
+            run_aicode_menu(main_js_path, manager_path, agy_path)
+        elif choice == "1":
             if main_js_path and os.path.isfile(main_js_path):
                 do_patch(main_js_path, show_search_line=searched)
             else:
@@ -585,7 +576,7 @@ def run_cli():
                               vscode_agy_path=vscode_agy_path, show_search_line=searched)
             print()
             if confirmed("Open GitHub repository in browser?"):
-                url = "https://github.com/AvenCores/open-antigravity-unlock"
+                url = "https://github.com/Lotargo/mirror-patch"
                 webbrowser.open(url)
                 ok(f"Opening: {color(url, COLOR_CYAN)}")
             else:

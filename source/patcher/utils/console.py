@@ -3,7 +3,7 @@ import sys
 import ctypes
 import re
 from patcher.constants import (
-    VERSION, COLOR_RESET, COLOR_CYAN, COLOR_GREEN, COLOR_YELLOW, COLOR_RED,
+    VERSION, PROJECT_NAME, PROJECT_REPO, COLOR_RESET, COLOR_CYAN, COLOR_GREEN, COLOR_YELLOW, COLOR_RED,
     COLOR_BOLD, COLOR_DIM, COLOR_GRAY, COLOR_WHITE, COLOR_UNDERLINE,
 )
 
@@ -106,22 +106,19 @@ def _frame_row(left, right="", accent=COLOR_CYAN):
 
 
 def print_banner():
-    title_left = color("Open AG Patcher", COLOR_BOLD)
+    title_left = color(PROJECT_NAME, COLOR_BOLD)
     title_right = color(f"v{VERSION}", COLOR_GREEN, COLOR_BOLD)
 
-    label_col = 12  # ширина колонки подписей (Telegram/YouTube) для ровной сетки
-    telegram = color("Telegram".ljust(label_col), COLOR_YELLOW) + link("https://t.me/avencoresyt", "t.me/avencoresyt", COLOR_DIM, COLOR_UNDERLINE)
-    youtube = color("YouTube".ljust(label_col), COLOR_YELLOW) + link("https://youtube.com/@avencores", "youtube.com/@avencores", COLOR_DIM, COLOR_UNDERLINE)
+    repository = link(f"https://github.com/{PROJECT_REPO}", PROJECT_REPO, COLOR_DIM, COLOR_UNDERLINE)
 
 
     print()
     print(f"  {_frame_border('╔', '═', '╗')}")
     print(f"  {_frame_row(title_left, title_right)}")
-    print(f"  {_frame_row(color('Region bypass for Antigravity', COLOR_CYAN))}")
-    print(f"  {_frame_row(color('Clean • No keys • No telemetry', COLOR_GREEN))}")
+    print(f"  {_frame_row(color('Antigravity personal AICode compatibility', COLOR_CYAN))}")
+    print(f"  {_frame_row(color('CLI • IDE • Manager • Server quotas', COLOR_GREEN))}")
     print(f"  {_frame_border('╟', '─', '╢')}")
-    print(f"  {_frame_row(telegram)}")
-    print(f"  {_frame_row(youtube)}")
+    print(f"  {_frame_row(repository)}")
     print(f"  {_frame_border('╚', '═', '╝')}")
 
     print()

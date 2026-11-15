@@ -7,6 +7,19 @@ from patcher.cli import run_cli, confirmed
 
 
 if __name__ == "__main__":
+    if "--version" in sys.argv:
+        from patcher.constants import PROJECT_NAME, VERSION
+        print(f"{PROJECT_NAME} {VERSION}")
+        sys.exit(0)
+    if "--help" in sys.argv and "--agy-aicode" not in sys.argv:
+        print("MirrorPatch: Antigravity personal AICode compatibility and diagnostics")
+        print("  --version                         Print patcher version")
+        print("  --check --json                    Inspect installed components")
+        print("  --hub-auth-status --json          Read running Hub authentication status")
+        print("  --agy-aicode install|status|restore --profile cli|hub|manager|ide --target PATH")
+        print("  --source PATH                     Optional audited native source executable")
+        print("Run without arguments for the interactive menu; choose 13 for AICode.")
+        sys.exit(0)
     if "--agy-aicode" in sys.argv:
         from patcher.agy.aicode import main as aicode_main
         sys.exit(aicode_main(sys.argv[1:]))
@@ -16,7 +29,8 @@ if __name__ == "__main__":
         sys.exit(run_command(sys.argv[1:]))
 
     setup_console()
-    if os.name == "nt" and os.environ.get("SKIP_ELEVATION") != "1" and not is_admin():
+    if (os.name == "nt" and os.environ.get("MIRRORPATCH_ELEVATE") == "1"
+            and os.environ.get("SKIP_ELEVATION") != "1" and not is_admin()):
         if run_as_admin():
             sys.exit(0)
         else:
@@ -62,5 +76,5 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as e:
         print(f"\n  [!] Unexpected error: {e}")
-        print("  [i] Please report it: https://github.com/AvenCores/open-antigravity-unlock/issues")
+        print("  [i] Please report it: https://github.com/Lotargo/mirror-patch/issues")
         sys.exit(1)

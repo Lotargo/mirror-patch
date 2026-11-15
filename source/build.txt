@@ -1,8 +1,12 @@
-Windows:
-pyinstaller --onefile --uac-admin --icon=icon.ico --name="Open_AG_Patcher_Windows" --noupx --clean --version-file=version.txt main.py
+Run from the repository root on Windows x64:
 
-Linux:
-pyinstaller --onefile --icon=icon.ico --name="Open_AG_Patcher_Linux" --hidden-import=packaging --hidden-import=packaging.version --hidden-import=packaging.specifiers --hidden-import=packaging.requirements main.py
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r source/requirements-build.txt
+.venv\Scripts\python.exe scripts/build_windows.py
 
-macOS universal2:
-pyinstaller --onefile --name="Open_AG_Patcher_macOS" --target-arch universal2 --hidden-import=packaging --hidden-import=packaging.version --hidden-import=packaging.specifiers --hidden-import=packaging.requirements main.py
+The working tree must be committed before source ZIP packaging.
+Use --build-only for a candidate, --package-only for an already verified clean build.
+See releases/README.md for checks, assets, licenses and publication.
+
+The new AICode release profiles are audited for Windows x64 only.
+Legacy Linux/macOS source paths remain in the repository but are not release-qualified.

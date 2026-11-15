@@ -13,6 +13,17 @@ from patcher.ide import aicode as frontend
 
 
 class GuiAICodeTests(unittest.TestCase):
+    def test_pristine_frontend_uses_personal_path_without_legacy_onboarding(self):
+        data = ('class Example{async confirmUserForService(t){if('
+                + frontend.PERSONAL_GATE + '){return "personal"}}'
+                + frontend.START + 'let r=await this.makePostRequest("v1internal:loadCodeAssist");'
+                'const i=r.paidTier?.availableCredits;return r}' + frontend.END + '}}').encode()
+        with patch.object(frontend, "PRISTINE_SOURCE_SHA256", native.digest(data)):
+            result = frontend.patch_frontend(data).decode()
+        self.assertNotIn(frontend.PERSONAL_GATE, result)
+        self.assertIn("!t.isGcpTos||this._productService.isGoogleInternal", result)
+        self.assertIn("fetchLicenses", result)
+
     def test_profiles_refuse_other_builds(self):
         for profile in ("cli", "hub", "manager", "unknown"):
             with self.assertRaises(ValueError):

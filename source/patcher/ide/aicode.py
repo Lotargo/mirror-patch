@@ -5,6 +5,8 @@ from pathlib import Path
 from patcher.agy.aicode import atomic_write, digest
 
 SOURCE_SHA256 = "166eb8c169ecf32aeef13c113c203af615ca192c485e025f6b7a851e8d61fa2c"
+PRISTINE_SOURCE_SHA256 = "4a88efbcfd29a5abbc15d366c276c8ed75e95a63a40853242a4ee14bdf91ba60"
+PERSONAL_GATE = "this._cloudCodeMainService.resetIsTierGCPTos(),this._productService.isGoogleInternal)"
 MARKER = "/* agy-aicode-personal-licenses-v1 */"
 START = "async loadCodeAssist(t,n){"
 END = "async onboardUser(t,n,r){"
@@ -12,9 +14,17 @@ LEGACY_START = 'let r=await this.makePostRequest("v1internal:loadCodeAssist"'
 
 
 def patch_frontend(data: bytes) -> bytes:
-    if digest(data) != SOURCE_SHA256:
+    source_hash = digest(data)
+    if source_hash not in {SOURCE_SHA256, PRISTINE_SOURCE_SHA256}:
         raise ValueError("Expected audited IDE 2.7.0 frontend; unknown or modified build")
     text = data.decode("utf-8")
+    if source_hash == PRISTINE_SOURCE_SHA256:
+        if text.count(PERSONAL_GATE) != 1:
+            raise ValueError("IDE personal onboarding gate is not unique")
+        # A personal AICode license is authoritative; do not re-enroll the same
+        # account through legacy onboardUser after a successful license lookup.
+        text = text.replace(PERSONAL_GATE,
+                            "this._cloudCodeMainService.resetIsTierGCPTos(),(!t.isGcpTos||this._productService.isGoogleInternal))")
     if text.count(START) != 1 or text.count(END) != 1:
         raise ValueError("IDE licensing method signatures are not unique")
     start = text.index(START) + len(START)

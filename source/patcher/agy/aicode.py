@@ -12,7 +12,9 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+import urllib.request
 
 SOURCE_SHA256 = "8803c289cac04d6e53f2211592d9981c2d5760bc0d9b4a7f222ef6ecc7abb38a"
 SOURCE_SHA512 = "539a9415a686d9ec45f5c59fe7d32c485c6fa9abaea50208ae8ede4ed3622b9fb2bfd6680c87dc52344981172a96ddacb261ff4231276b5572fb5b62a9b0221e"
@@ -21,6 +23,12 @@ NATIVE_NAME = "agy-aicode-native.exe"
 MANIFEST_NAME = "agy-aicode-patch.json"
 RUNTIME = Path(__file__).with_name("aicode_runtime")
 PATCH_VERSION = 2
+PREBUILT_NATIVE_HASHES = {
+    "cli": ("e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794",),
+    "hub": ("e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794",),
+    "manager": ("f6bbfcc78c30aff2d520605563888c5d026fe737c47046fb8597747f8ea5c83c",
+                "be201731a12046cd8c5a837d6a5d00dc99f7968d172dee21f905625ef22daea1"),
+}
 MANAGER_SOURCE_HASHES = {
     "33beef9814027cd5ed2ecbbcd0126645252c4b2516c0296e15091ca7e113b76f",  # existing local gate
     "65cdb8d132fc61056625081be7d07d4d22f57eba485de7edf0d24d98e77c891f",  # original bundled build
@@ -111,6 +119,22 @@ def status(target: Path) -> dict:
 
 
 def build_launcher(output: Path, native_hash: str, profile="cli") -> None:
+    prebuilt = RUNTIME / "prebuilt"
+    manifest_path = prebuilt / "manifest.json"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text("utf-8"))
+        name = f"{profile}-{native_hash}.exe"
+        if (manifest.get("runtime_sha256") != runtime_fingerprint()
+                or native_hash not in PREBUILT_NATIVE_HASHES.get(profile, ())):
+            raise ValueError("Bundled launcher does not match the audited runtime/profile")
+        candidate = prebuilt / name
+        data = candidate.read_bytes()
+        if digest(data) != manifest.get("assets", {}).get(name):
+            raise ValueError("Bundled launcher checksum mismatch")
+        output.write_bytes(data)
+        return
+    if getattr(sys, "frozen", False):
+        raise ValueError("Release package is missing its bundled compatibility launchers")
     go = shutil.which("go")
     if not go:
         raise ValueError("Go compiler is required to build the compatibility launcher")
@@ -120,7 +144,44 @@ def build_launcher(output: Path, native_hash: str, profile="cli") -> None:
                    cwd=RUNTIME, env=env, check=True)
 
 
-def install(target: Path, source: Path, profile="cli") -> dict:
+def resolve_source(target: Path, profile: str) -> Path:
+    """Use a verified local original; only CLI/Hub can download the pinned public build."""
+    accepted = MANAGER_SOURCE_HASHES if profile == "manager" else {SOURCE_SHA256}
+    for candidate in (target, target.with_name(target.name + ".before-aicode"),
+                      target.with_name(target.name + ".agybak")):
+        if candidate.is_file() and digest(candidate.read_bytes()) in accepted:
+            return candidate
+    if profile == "manager":
+        raise ValueError("Manager 2.32.1 source is not recognized; provide an audited --source executable")
+    cache = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".cache"))) / "MirrorPatch/cache"
+    cache.mkdir(parents=True, exist_ok=True)
+    destination = cache / f"agy-1.5.9-{SOURCE_SHA256}.exe"
+    if destination.is_file() and digest(destination.read_bytes()) == SOURCE_SHA256:
+        return destination
+    fd, temp_name = tempfile.mkstemp(prefix="agy-download-", suffix=".tmp", dir=cache)
+    try:
+        request = urllib.request.Request(SOURCE_URL, headers={"User-Agent": "MirrorPatch"})
+        count = 0
+        sha = hashlib.sha512()
+        with os.fdopen(fd, "wb") as output, urllib.request.urlopen(request, timeout=30) as response:
+            while chunk := response.read(1024 * 1024):
+                count += len(chunk)
+                if count > 231726744:
+                    raise ValueError("Official CLI download exceeds the pinned build size")
+                sha.update(chunk)
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+        if count != 231726744 or sha.hexdigest() != SOURCE_SHA512:
+            raise ValueError("Official CLI download checksum/size mismatch")
+        os.replace(temp_name, destination)
+        return destination
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def install(target: Path, source: Path | None = None, profile="cli") -> dict:
     target = target.absolute()
     if os.name != "nt":
         raise ValueError("This pinned native patch supports Windows x64 only")
@@ -142,6 +203,7 @@ def install(target: Path, source: Path, profile="cli") -> dict:
             raise ValueError("Existing compatibility installation differs; restore or review it first")
     if not upgrading and (backup.exists() or native.exists()):
         raise ValueError("Companion or backup already exists without manifest; review before installing")
+    source = source or resolve_source(target, profile)
     source_data = source.read_bytes()
     patched = patch_native(source_data, profile=profile)
     previous = backup.read_bytes() if upgrading else target.read_bytes()
@@ -221,8 +283,6 @@ def main(args: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2))
             return 1 if result["state"] == "modified" else 0
         if options.agy_aicode == "install":
-            if options.source is None:
-                parser.error("install requires --source")
             result = install(options.target, options.source, profile=options.profile)
         elif options.agy_aicode == "restore":
             result = restore(options.target)
