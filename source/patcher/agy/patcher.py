@@ -6,6 +6,7 @@ import mmap
 import shutil
 import contextlib
 import filecmp
+from pathlib import Path
 
 from patcher.constants import COLOR_CYAN
 from patcher.utils.console import (
@@ -30,6 +31,7 @@ from patcher.utils.file import (
 from patcher.utils.update import handle_patch_failure
 from patcher.utils.admin import terminate_processes
 from patcher.utils.atomic import atomic_replace_posix, apply_patches_to_data
+from patcher.status import combine_states
 
 BAK_EXT = ".agybak"
 
@@ -46,14 +48,16 @@ class Gate:
         self.desc = desc
 
     def find(self, data):
-        """('patched'|'unpatched', [file offsets to write at]).
+        """('patched'|'unpatched'|'partial', [file offsets to write at]).
         LookupError, если сигнатура отсутствует (неизвестный билд).
         Несколько unpatched-вхождений допустимы — патчим все (Go может
         компилировать одну функцию в нескольких экземплярах)."""
         patched_offsets = [m.start() + self.offset for m in self.patched.finditer(data)]
+        unpatched_offsets = [m.start() + self.offset for m in self.sig.finditer(data)]
+        if patched_offsets and unpatched_offsets:
+            return ("partial", unpatched_offsets)
         if patched_offsets:
             return ("patched", patched_offsets)
-        unpatched_offsets = [m.start() + self.offset for m in self.sig.finditer(data)]
         if not unpatched_offsets:
             raise LookupError("gate signature not found (unsupported version?)")
         return ("unpatched", unpatched_offsets)
@@ -226,12 +230,18 @@ def is_locked(path):
         return True
 
 
-def get_status(path):
-    """('patched'|'unpatched'|'unknown', None) — без исключений наружу.
-    'patched' только если ВСЕ гейты применены."""
-    if not path or not os.path.isfile(path):
-        return ("unknown", None)
+def get_status(path, *, strict=False):
+    """Состояние всех гейтов. strict сохраняет причину ошибки чтения для диагностики."""
+    if not path:
+        return ("missing", None)
     try:
+        from patcher.agy import aicode
+        if Path(path).with_name(aicode.MANIFEST_NAME).is_file():
+            try:
+                state = aicode.status(Path(path))["state"]
+                return ("patched" if state == "installed" else "unknown", None)
+            except (ValueError, KeyError):
+                return ("unknown", None)
         with _mapped(path) as d:
             states = []
             for gate, _ in ALL_GATES:
@@ -240,13 +250,13 @@ def get_status(path):
                         states.append(state)
                 except LookupError:
                     return ("unknown", None)
-            if all(s == "patched" for s in states):
-                return ("patched", None)
-            if all(s == "unpatched" for s in states):
-                return ("unpatched", None)
-            return ("unpatched", None)  # частично применён — считаем unpatched
+            return (combine_states(states), None)
+    except FileNotFoundError:
+        return ("missing", None)
     except OSError:
-        return ("unknown", None)
+        if strict:
+            raise
+        return ("error", None)
 
 
 def is_already_patched(path):
@@ -312,6 +322,14 @@ def do_patch_agy(path):
     from patcher.cli import confirmed
     from patcher.utils.captcha import confirm_with_captcha
 
+    from patcher.agy import aicode
+    if path and Path(path).with_name(aicode.MANIFEST_NAME).is_file():
+        if get_status(path)[0] == "patched":
+            hint("AICode compatibility patch is installed; legacy eligibility gates are not needed.")
+        else:
+            err("AICode compatibility files differ; review or restore them before patching.")
+        return
+
     if not path or not os.path.isfile(path):
         from patcher.cli import offer_download_and_block
         offer_download_and_block("Antigravity CLI")
@@ -349,6 +367,9 @@ def do_patch_agy(path):
                         handle_patch_failure()
                         return
                     for kind, offsets, g in matches:
+                        if kind == "partial":
+                            err("Partially patched binary: restore a backup for this build before patching.")
+                            return False
                         if kind == "unpatched":
                             all_patched = False
                             for off in offsets:
@@ -467,6 +488,16 @@ def do_patch_agy(path):
 
 def do_restore_agy(path):
     from patcher.cli import confirmed
+
+    from patcher.agy import aicode
+    if path and Path(path).with_name(aicode.MANIFEST_NAME).is_file():
+        if confirmed("Restore the executable saved before AICode compatibility installation?"):
+            try:
+                aicode.restore(Path(path))
+                ok("Previous agy executable restored.")
+            except (ValueError, OSError, KeyError) as exc:
+                err(f"Compatibility restore failed: {exc}")
+        return
 
     if not os.path.isfile(path):
         err(f"Target is not a file: {path}")

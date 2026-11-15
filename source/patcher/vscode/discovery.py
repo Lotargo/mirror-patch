@@ -1,5 +1,7 @@
 import os
 import glob
+import json
+import re
 
 
 def _user_home():
@@ -61,12 +63,84 @@ def find_extension_dir():
 
 
 def find_extension_js():
-    """Возвращает путь к extension.js расширения google.google-antigravity или ''."""
+    """Разрешает main из манифеста, включая dist и делегирование в vscode/."""
     ext_dir = find_extension_dir()
     if not ext_dir:
         return ""
-    js = os.path.join(ext_dir, "extension.js")
-    return js if os.path.isfile(js) else ""
+    try:
+        return inspect_extension_dir(ext_dir)["path"]
+    except (OSError, ValueError):
+        return ""
+
+
+def _contained_path(directory, relative):
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("Extension main must be a non-empty relative path")
+    root = os.path.realpath(directory)
+    target = os.path.realpath(os.path.join(root, relative))
+    if os.path.isabs(relative) or os.path.commonpath([root, target]) != root:
+        raise ValueError("Extension entry escapes its installation directory")
+    return target
+
+
+def inspect_extension_dir(directory):
+    """Читает main/version и определяет режим без запуска JS и backend."""
+    manifest_path = os.path.join(directory, "package.json")
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except FileNotFoundError:
+        manifest = {}
+    if not isinstance(manifest, dict):
+        raise ValueError("Extension manifest must be a JSON object")
+    entry = _contained_path(directory, manifest.get("main", "extension.js"))
+    with open(entry, "r", encoding="utf-8") as f:
+        content = f.read()
+    implementation = entry
+    # Встроенный адаптер IDE 2.7.0 передаёт управление этому пакету.
+    if re.search(r"require\(\s*['\"]\.\./vscode/extension\.js['\"]\s*\)", content):
+        implementation = _contained_path(directory, "vscode/extension.js")
+        with open(implementation, "r", encoding="utf-8") as f:
+            content = f.read()
+    return {
+        "directory": os.path.abspath(directory),
+        "entry_path": entry,
+        "path": implementation,
+        "version": manifest.get("version"),
+        "mode": "hub" if re.search(r"['\"]--hub['\"]", content) else "legacy",
+    }
+
+
+def find_bundled_extension_dir(main_js_path):
+    from patcher.ide.discovery import get_app_root
+
+    if not main_js_path:
+        return ""
+    root = os.path.join(get_app_root(main_js_path), "extensions")
+    for name in ("agy", "google.google-antigravity"):
+        candidate = os.path.join(root, name)
+        if os.path.isdir(candidate):
+            return candidate
+    return ""
+
+
+def inspect_extension_path(path):
+    """Разрешает выбранный файл через манифест его расширения, если он есть."""
+    parent = os.path.dirname(os.path.abspath(path))
+    for directory in (parent, os.path.dirname(parent)):
+        if os.path.isfile(os.path.join(directory, "package.json")):
+            info = inspect_extension_dir(directory)
+            if os.path.realpath(path) in (info["entry_path"], info["path"]):
+                return info
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"path": path, "entry_path": path, "version": None,
+            "mode": "hub" if re.search(r"['\"]--hub['\"]", content) else "legacy"}
+
+
+def expected_hub_binary():
+    """IDE/расширение с --hub используют agy, независимо от старого antigravity."""
+    return os.path.join(_user_home(), ".gemini", "bin", "agy.exe" if os.name == "nt" else "agy")
 
 
 def resolve_extension_path(raw_path):
@@ -87,18 +161,24 @@ def resolve_extension_path(raw_path):
         return resolved
 
     if os.path.isdir(resolved):
+        if os.path.isfile(os.path.join(resolved, "package.json")):
+            try:
+                return inspect_extension_dir(resolved)["path"]
+            except (OSError, ValueError):
+                return ""
         # Каталог самого расширения
         direct = os.path.join(resolved, "extension.js")
         if os.path.isfile(direct):
             return direct
         # Корневой каталог extensions — ищем внутри google.google-antigravity-*
-        hits = glob.glob(
-            os.path.join(resolved, "google.google-antigravity-*", "extension.js")
-        )
-        hits = [h for h in hits if os.path.isfile(h)]
+        hits = glob.glob(os.path.join(resolved, "google.google-antigravity-*"))
+        hits = [h for h in hits if os.path.isdir(h)]
         if hits:
             hits.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-            return hits[0]
+            try:
+                return inspect_extension_dir(hits[0])["path"]
+            except (OSError, ValueError):
+                return ""
 
     return ""
 

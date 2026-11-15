@@ -83,7 +83,17 @@ def apply_patches(content, ag_version=None):
 
 
 def is_already_patched(content):
-    return IDE_DONE in content and not IDE_RE.search(content)
+    return get_status(content) == "patched"
+
+
+def get_status(content):
+    original = bool(IDE_RE.search(content))
+    patched = IDE_DONE in content
+    if original and patched:
+        return "partial"
+    if original:
+        return "unpatched"
+    return "patched" if patched else "unknown"
 
 
 def warn_about_unsafe_backup(main_js_path, installed_version_str=None, current_content=None):
@@ -133,6 +143,10 @@ def do_patch(main_js_path, show_search_line=False):
 
     ver_status, ver_str = check_ag_version(main_js_path)
     parsed_version = parse_version_safe(ver_str)
+
+    if parsed_version is not None and parsed_version >= parse_version_safe("2.6.0"):
+        err("This IDE uses its built-in extension and agy --hub. The legacy main.js patch does not cover Hub login.")
+        return False
 
     if ver_status == VersionStatus.TOO_OLD:
         err(f"Unsupported version: {ver_str}")

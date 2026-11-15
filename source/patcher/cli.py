@@ -32,27 +32,26 @@ from patcher.utils.console import (
     cancel,
 )
 
-from patcher.utils.file import file_size, format_bytes
 from patcher.utils.update import check_for_updates, open_releases_page, print_update_status_notice
 
 from patcher.ide.discovery import (
     find_install_root,
     find_main_js,
-    get_ag_version,
     resolve_target_path,
 )
-from patcher.ide.patcher import is_already_patched, do_patch, do_restore
+from patcher.ide.patcher import do_patch, do_restore
 from patcher.agy.discovery import find_agy_binary, resolve_agy_path
 from patcher.agy.patcher import is_already_patched as is_agy_patched, do_patch_agy, do_restore_agy
 
-from patcher.manager.discovery import find_manager_binary, resolve_manager_path, get_antigravity_version
-from patcher.manager.patcher import is_already_patched as is_mgr_patched, do_patch_manager, do_restore_manager
+from patcher.manager.discovery import find_manager_binary, resolve_manager_path
+from patcher.manager.patcher import do_patch_manager, do_restore_manager
 
 from patcher.vscode.discovery import (
     find_extension_js,
     resolve_extension_path,
     find_gemini_antigravity_binary,
     describe_gemini_binary_path,
+    inspect_extension_path,
 )
 from patcher.vscode.patcher import (
     is_already_patched as is_vscode_patched,
@@ -119,6 +118,9 @@ def print_path_examples():
 
 
 def _read_console_line(prompt):
+    from patcher.utils.runtime import is_unattended
+    if is_unattended():
+        raise EOFError("Interactive input is disabled in background mode")
     print(prompt, end="", flush=True)
 
     stdin_buffer = getattr(sys.stdin, "buffer", None)
@@ -153,12 +155,18 @@ def prompt_yn(question):
 
 def confirmed(question):
     """Возвращает True, если пользователь ответил 'y'."""
+    from patcher.utils.runtime import is_unattended
+    if is_unattended():
+        return False
     if os.environ.get("AUTO_CONFIRM") == "1":
         return True
     return prompt_yn(question) in ("y", "yes", "\u0434", "\u0434\u0430")
 
 
 def offer_download_and_block(software_name="Antigravity", target_type=None):
+    from patcher.utils.runtime import is_unattended
+    if is_unattended():
+        return False
     err(f"{software_name} path is not set or software is not installed.")
     err("Patching attempt blocked.")
     hint(f"Download URL: {color(DOWNLOAD_URL, COLOR_CYAN)}")
@@ -221,100 +229,31 @@ def _kv(label, value_text, value_color):
 
 
 def print_target_info(main_js_path, manager_path="", agy_path="", vscode_path="", vscode_agy_path="", show_search_line=False):
+    from patcher.diagnostics import get_components_status
+
     if show_search_line:
         info("Searching for installations...")
-
-    # 1. Antigravity IDE Info
-    print_menu_section("ANTIGRAVITY IDE")
-    _kv("Target:", main_js_path if main_js_path else "Not found", COLOR_CYAN)
-    if main_js_path and os.path.exists(main_js_path):
-        try:
-            with open(main_js_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            _kv("Status:", "found", COLOR_GREEN)
-            patched = is_already_patched(content)
-            _kv("Patch:", "already patched" if patched else "not patched",
-                COLOR_YELLOW if patched else COLOR_GREEN)
-        except Exception:
-            _kv("Status:", "unreadable", COLOR_RED)
-            _kv("Patch:", "unreadable", COLOR_RED)
-
-        ver_str, _ = get_ag_version(main_js_path)
-        _kv("Version:", ver_str if ver_str else "not detected",
-            COLOR_GREEN if ver_str else COLOR_YELLOW)
-
-        size = file_size(main_js_path)
-        _kv("Size:", format_bytes(size), COLOR_GREEN if size > 0 else COLOR_YELLOW)
-    else:
-        _kv("Status:", "not found", COLOR_RED)
-
-    print()
-
-    # 2. Antigravity 2.0 Info
-    print_menu_section("ANTIGRAVITY 2.0")
-    _kv("Target:", manager_path if manager_path else "Not found", COLOR_CYAN)
-    if manager_path and os.path.isfile(manager_path):
-        _kv("Status:", "found", COLOR_GREEN)
-        patched = is_mgr_patched(manager_path)
-        _kv("Patch:", "already patched" if patched else "not patched",
-            COLOR_YELLOW if patched else COLOR_GREEN)
-        
-        ver_str = get_antigravity_version(manager_path)
-        _kv("Version:", ver_str if ver_str else "not detected",
-            COLOR_GREEN if ver_str else COLOR_YELLOW)
-
-        size = file_size(manager_path)
-        _kv("Size:", format_bytes(size), COLOR_GREEN if size > 0 else COLOR_YELLOW)
-    else:
-        _kv("Status:", "not found", COLOR_YELLOW)
-
-    print()
-
-    # 3. Antigravity CLI Info
-    print_menu_section("ANTIGRAVITY CLI")
-    _kv("Target:", agy_path if agy_path else "Not found", COLOR_CYAN)
-    if agy_path and os.path.isfile(agy_path):
-        _kv("Status:", "found", COLOR_GREEN)
-        patched = is_agy_patched(agy_path)
-        _kv("Patch:", "already patched" if patched else "not patched",
-            COLOR_YELLOW if patched else COLOR_GREEN)
-        size = file_size(agy_path)
-        _kv("Size:", format_bytes(size), COLOR_GREEN if size > 0 else COLOR_YELLOW)
-    else:
-        _kv("Status:", "not found", COLOR_YELLOW)
-
-    print()
-
-    # 4. Antigravity VS Code Extension Info (extension.js + бинарь agy)
-    print_menu_section("ANTIGRAVITY VS CODE EXTENSION")
-    _kv("Target:", vscode_path if vscode_path else "Not found", COLOR_CYAN)
-    if vscode_path and os.path.isfile(vscode_path):
-        _kv("Status:", "found", COLOR_GREEN)
-        try:
-            with open(vscode_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            patched = is_vscode_patched(content)
-            _kv("Patch:", "already patched" if patched else "not patched",
-                COLOR_YELLOW if patched else COLOR_GREEN)
-        except Exception:
-            _kv("Patch:", "unreadable", COLOR_RED)
-        size = file_size(vscode_path)
-        _kv("Size:", format_bytes(size), COLOR_GREEN if size > 0 else COLOR_YELLOW)
-    else:
-        _kv("Status:", "not found", COLOR_YELLOW)
-
-    print()
-
-    _kv("AGY Bin:", vscode_agy_path if vscode_agy_path else "Not found", COLOR_CYAN)
-    if vscode_agy_path and os.path.isfile(vscode_agy_path):
-        _kv("Status:", "found", COLOR_GREEN)
-        patched = is_agy_patched(vscode_agy_path)
-        _kv("Patch:", "already patched" if patched else "not patched",
-            COLOR_YELLOW if patched else COLOR_GREEN)
-        size = file_size(vscode_agy_path)
-        _kv("Size:", format_bytes(size), COLOR_GREEN if size > 0 else COLOR_YELLOW)
-    else:
-        _kv("Status:", "not found", COLOR_YELLOW)
+    status = get_components_status({
+        "ide": main_js_path, "manager": manager_path, "agy": agy_path,
+        "vscode_ext": vscode_path, "vscode_bin": vscode_agy_path,
+    })
+    for component in status["components"]:
+        if component["status"] == "missing" and not component["required"]:
+            continue
+        print_menu_section(component["name"].upper())
+        _kv("Target:", component["path"] or "Not found", COLOR_CYAN)
+        state = component["status"]
+        shade = (COLOR_GREEN if state == "patched" else COLOR_CYAN if state == "not_applicable"
+                 else COLOR_RED if state == "error" else COLOR_YELLOW)
+        _kv("Patch:", state, shade)
+        _kv("Mode:", component["mode"], COLOR_CYAN)
+        _kv("Files:", component["file_status"], COLOR_CYAN)
+        if component["version"]:
+            _kv("Version:", component["version"], COLOR_CYAN)
+        if component["reason"] or component["error"]:
+            hint(component["reason"] or component["error"])
+        print()
+    hint("Status covers local files only. Authentication has not been checked.")
 
 
 def show_about():
@@ -415,14 +354,26 @@ def do_patch_vscode_flow(vscode_path, vscode_agy_path, set_js_cb=None, set_agy_c
         hint("run it once — it downloads the binary to ~/.gemini/bin automatically.")
         return False
 
-    # --- 1. Патчим extension.js ---
-    do_patch_vscode(vscode_path)
+    try:
+        if inspect_extension_path(vscode_path)["mode"] == "hub":
+            err("This extension uses agy --hub. The legacy VS Code patch does not cover Hub login.")
+            return False
+    except (OSError, ValueError) as exc:
+        err(f"Cannot inspect extension: {exc}")
+        return False
+
+    # Не меняем бинарь после неуспешного применения первой части цепочки.
+    if not do_patch_vscode(vscode_path):
+        return False
+    with open(vscode_path, "r", encoding="utf-8") as f:
+        if not is_vscode_patched(f.read()):
+            return False
 
     # --- 2. Патчим бинарь ~/.gemini/bin/antigravity (agy-патчем) ---
     print()
     info(f"Found downloaded binary: {color(vscode_agy_path, COLOR_CYAN)}")
     do_patch_agy(vscode_agy_path)
-    return True
+    return is_agy_patched(vscode_agy_path)
 
 
 def run_cli():

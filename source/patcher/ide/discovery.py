@@ -242,10 +242,26 @@ def find_main_js(root):
     return ""
 
 
+def get_app_root(main_js_path):
+    """Каталог resources/app для обычной установки и portable/.app раскладок."""
+    parent = os.path.dirname(os.path.abspath(main_js_path))
+    return os.path.dirname(parent) if os.path.basename(parent).lower() == "out" else parent
+
+
 def get_ag_version(main_js_path):
-    """Читает версию Antigravity IDE из реестра Windows, Info.plist на macOS или package.json на Linux.
+    """Сначала product.json.ideVersion, затем реестр Windows, Info.plist или package.json.
     Возвращает (version_str, is_pkg_mgr).
     """
+    # ideVersion относится к выбранной установке, version содержит версию VS Code.
+    product = os.path.join(get_app_root(main_js_path), "product.json")
+    try:
+        with open(product, "r", encoding="utf-8") as f:
+            ide_version = json.load(f).get("ideVersion")
+        if isinstance(ide_version, str) and ide_version.strip():
+            return ide_version.strip(), False
+    except (OSError, ValueError, AttributeError):
+        pass
+
     # macOS: читаем версию из Info.plist
     if sys.platform == "darwin":
         # Ищем .app-бандл, поднимаясь от main.js

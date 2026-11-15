@@ -52,15 +52,17 @@ class Gate:
         self.desc = desc
 
     def find(self, data):
-        m = self.patched.search(data)
-        if m:
-            return ("patched", m.start() + self.offset)
-        m = self.sig.search(data)
-        if not m:
+        patched = list(self.patched.finditer(data))
+        original = list(self.sig.finditer(data))
+        if patched and original:
+            return ("partial", original[0].start() + self.offset)
+        if len(patched) > 1 or len(original) > 1:
+            raise LookupError("gate signature is not unique: refusing to guess")
+        if patched:
+            return ("patched", patched[0].start() + self.offset)
+        if not original:
             raise LookupError("gate signature not found (unsupported version?)")
-        if self.sig.search(data, m.end()):
-            raise LookupError("gate signature is not unique — refusing to guess")
-        return ("unpatched", m.start() + self.offset)
+        return ("unpatched", original[0].start() + self.offset)
 
     def resolve(self, data):
         """(kind, write-offset, concrete-gate). The concrete gate carries the fix bytes
@@ -73,20 +75,21 @@ class MultiGate:
     """One logical gate whose machine code differs per CPU arch (the Manager's auth check
     compiles to distinct amd64 vs arm64 instructions), so it declares one Gate signature
     per arch. A given binary matches exactly one — different archs share no byte pattern —
-    so there's no ambiguity; the first that finds a match wins."""
+    so every variant is checked and ambiguous matches are rejected."""
 
     def __init__(self, *gates, desc=""):
         self.gates = gates
         self.desc = desc
 
     def resolve(self, data):
-        err = None
+        matches = []
         for g in self.gates:
-            try:
-                return g.resolve(data)
-            except LookupError as e:
-                err = e
-        raise err or LookupError("no gate signature matched")
+            # Не теряем неоднозначность первого варианта при поиске следующего.
+            if g.sig.search(data) or g.patched.search(data):
+                matches.append(g.resolve(data))
+        if len(matches) != 1:
+            raise LookupError("expected exactly one Manager gate variant")
+        return matches[0]
 
 
 # language_server.exe / language_server (Go binary) auth validator gate:
@@ -185,9 +188,9 @@ def is_locked(path):
         return True
 
 
-def get_status(path):
-    if not path or not os.path.isfile(path):
-        return ("unknown", None)
+def get_status(path, *, strict=False):
+    if not path:
+        return ("missing", None)
     try:
         with _mapped(path) as d:
             try:
@@ -195,8 +198,12 @@ def get_status(path):
                 return (state, g)
             except LookupError:
                 return ("unknown", None)
+    except FileNotFoundError:
+        return ("missing", None)
     except OSError:
-        return ("unknown", None)
+        if strict:
+            raise
+        return ("error", None)
 
 
 def is_already_patched(path):
@@ -292,6 +299,9 @@ def do_patch_manager(path):
                     err(f"{e}")
                     handle_patch_failure()
                     return
+                if kind == "partial":
+                    err("Partially patched binary: restore a backup for this build before patching.")
+                    return False
                 if kind == "patched":
                     hint("Antigravity Manager already patched.")
                     if not confirm_with_captcha("Apply patch anyway?"):

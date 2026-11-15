@@ -64,7 +64,23 @@ PART2_REPLACEMENT = "const isChannelChanged = false;"
 
 def is_already_patched(content):
     """True, если обе части патча уже применены к extension.js."""
-    return (PART1_INJECT in content) and ("const isChannelChanged = false;" in content)
+    return get_status(content) == "patched"
+
+
+def get_status(content):
+    done1 = PART1_INJECT in content
+    done2 = bool(PART2_DONE_RE.search(content))
+    anchors = list(PART1_ANCHOR_RE.finditer(content))
+    original1 = any(not content.startswith(PART1_INJECT, m.end(1)) for m in anchors)
+    original2 = bool(PART2_RE.search(content))
+    # Якорь первой части остаётся и после вставки, второй обязан исчезнуть.
+    if done1 and anchors and done2 and not original1 and not original2:
+        return "patched"
+    if done1 or done2:
+        return "partial"
+    if original1 and original2:
+        return "unpatched"
+    return "unknown"
 
 
 def _apply_part1(content):
@@ -160,6 +176,10 @@ def do_patch_vscode(extension_js_path):
                 warn(f"Could not read backup for re-patch: {e}")
         new_content, s1 = _apply_part1(new_content)
         new_content, s2 = _apply_part2(new_content)
+
+    if not is_already_patched(new_content):
+        err("Incomplete extension patch: required patterns are missing. No files changed.")
+        return False
 
     changed = new_content != content
     if changed:

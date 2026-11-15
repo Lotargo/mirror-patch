@@ -138,6 +138,9 @@ def handle_patch_failure():
     - If an update is available, offers to open the releases page to install it.
     - If using the latest version (or no update available), offers to create an issue on GitHub.
     """
+    from patcher.utils.runtime import is_unattended
+    if is_unattended():
+        return
     from patcher.cli import confirmed
 
     print()

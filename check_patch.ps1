@@ -18,7 +18,7 @@
     Suppresses Windows toast and balloon notifications.
 
 .PARAMETER Force
-    Forces re-patching even if all components report as already patched.
+    Forces complete re-verification. Already patched files are never rewritten.
 
 .EXAMPLE
     .\check_patch.ps1
@@ -147,125 +147,71 @@ function Write-StyledHeader {
 function Show-StatusTable {
     param($components)
     if ($Silent) { return }
-
-    Write-Host "  Current Component Status:" -ForegroundColor White
-    Write-Host "  -------------------------------------------------------------" -ForegroundColor DarkGray
     foreach ($c in $components) {
-        $name = $c.name.PadRight(28)
-        if (-not $c.installed) {
-            Write-Host "  [-] $name" -NoNewline -ForegroundColor DarkGray
-            Write-Host " [NOT INSTALLED]" -ForegroundColor DarkGray
-        } elseif ($c.patched -eq $true) {
-            Write-Host "  [+] $name" -NoNewline -ForegroundColor Green
-            Write-Host " [PATCHED]" -ForegroundColor Green
-            Write-Host "      Path: $($c.path)" -ForegroundColor DarkGray
-        } else {
-            Write-Host "  [!] $name" -NoNewline -ForegroundColor Red
-            Write-Host " [NOT PATCHED / REVERTED]" -ForegroundColor Red
-            Write-Host "      Path: $($c.path)" -ForegroundColor Yellow
+        $shade = switch ($c.status) {
+            "patched" { "Green" }
+            "not_applicable" { "Cyan" }
+            "error" { "Red" }
+            "missing" { "DarkGray" }
+            default { "Yellow" }
         }
+        Write-Host "  [$($c.status.ToUpper())] $($c.name)" -ForegroundColor $shade
+        if ($c.path) { Write-Host "      Path: $($c.path)" -ForegroundColor DarkGray }
+        Write-Host "      Mode: $($c.mode); file state: $($c.file_status)" -ForegroundColor DarkGray
+        if ($c.reason) { Write-Host "      $($c.reason)" -ForegroundColor Yellow }
+        if ($c.error) { Write-Host "      $($c.error)" -ForegroundColor Red }
     }
-    Write-Host "  -------------------------------------------------------------" -ForegroundColor DarkGray
-    Write-Host ""
+    Write-Host "  Authentication has not been checked." -ForegroundColor Yellow
 }
 
-# --- Execution Flow ---
+function Invoke-PatchCommand {
+    param([string[]]$CommandArgs)
+    $stderrPath = [IO.Path]::GetTempFileName()
+    try {
+        # Код 2 означает неполное покрытие, при этом stdout остаётся валидным JSON.
+        $PSNativeCommandUseErrorActionPreference = $false
+        $output = & $pythonExe $mainScript @CommandArgs 2> $stderrPath
+        $code = $LASTEXITCODE
+        if ($code -notin @(0, 2)) {
+            $details = Get-Content -Raw -LiteralPath $stderrPath
+            throw "Python status command failed (exit $code): $details"
+        }
+        $data = ($output -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $data) { throw "Python returned an empty status document." }
+        return [pscustomobject]@{ Data = $data; ExitCode = $code }
+    } finally {
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
 
 Write-StyledHeader
-
-# Step 1: Initial Status Check
-if (-not $Silent) {
-    Write-Host "[*] Checking patch state across installed components..." -ForegroundColor Cyan
-}
-
-$rawCheck = & $pythonExe $mainScript --check --json 2>&1
-$rawCheckText = ($rawCheck | Out-String)
-$firstBrace = $rawCheckText.IndexOf('{')
-$lastBrace = $rawCheckText.LastIndexOf('}')
-
-if ($firstBrace -lt 0 -or $lastBrace -le $firstBrace) {
-    Write-Error "[!] Failed to find JSON output from Python patch check.`nRaw output:`n$rawCheckText"
-    Send-Notification -Title "Antigravity Patch Error" -Message "Failed to check patch status." -Type "Error"
-    exit 1
-}
-
-$jsonString = $rawCheckText.Substring($firstBrace, $lastBrace - $firstBrace + 1)
-
-try {
-    $status = $jsonString | ConvertFrom-Json
-} catch {
-    Write-Error "[!] Failed to parse patch check status JSON: $_`nRaw text:`n$jsonString"
-    Send-Notification -Title "Antigravity Patch Error" -Message "Failed to parse patch status." -Type "Error"
-    exit 1
-}
-
+$checked = Invoke-PatchCommand -CommandArgs @("--check", "--json")
+$status = $checked.Data
 Show-StatusTable -components $status.components
 
-$needsRepatch = ($status.all_patched -eq $false -and $status.unpatched_count -gt 0) -or $Force
-
-if ($needsRepatch) {
-    $unpatchedList = ($status.unpatched_components -join ", ")
-    if ($Force -and -not $unpatchedList) {
-        $unpatchedList = "Forced re-patch requested"
-    }
-
-    if (-not $Silent) {
-        Write-Host "[!] Found unpatched / reverted targets: $unpatchedList" -ForegroundColor Yellow
-        Write-Host "[*] Automatically applying patch..." -ForegroundColor Yellow
-    }
-
-    # Execute check-and-patch
-    $rawRepatch = & $pythonExe $mainScript --check-and-patch --json 2>&1
-    $rawRepatchText = ($rawRepatch | Out-String)
-    $firstBraceR = $rawRepatchText.IndexOf('{')
-    $lastBraceR = $rawRepatchText.LastIndexOf('}')
-
-    if ($firstBraceR -lt 0 -or $lastBraceR -le $firstBraceR) {
-        Write-Error "[!] Error during auto-patch execution (no JSON returned):`n$rawRepatchText"
-        Send-Notification -Title "Antigravity Patch Error" -Message "Error during auto-patching." -Type "Error"
-        exit 1
-    }
-
-    $repatchJson = $rawRepatchText.Substring($firstBraceR, $lastBraceR - $firstBraceR + 1)
-
-    try {
-        $result = $repatchJson | ConvertFrom-Json
-    } catch {
-        Write-Error "[!] Error parsing auto-patch result JSON: $_`nRaw text:`n$repatchJson"
-        Send-Notification -Title "Antigravity Patch Error" -Message "Error during auto-patching." -Type "Error"
-        exit 1
-    }
-
-    # Step 2: Verification check after re-patch
-    if (-not $Silent) {
-        Write-Host "[*] Re-verifying patch status after auto-repair..." -ForegroundColor Cyan
-    }
-
-    Show-StatusTable -components $result.final_status.components
-
-    if ($result.success -eq $true) {
-        if (-not $Silent) {
-            Write-Host "[+] All Antigravity components successfully verified and patched!" -ForegroundColor Green
-            Write-Host ""
-        }
-        Send-Notification -Title "Antigravity Patch" -Message "All components verified and patched successfully!" -Type "Info"
-        exit 0
-    } else {
-        $failedTargets = ($result.final_status.unpatched_components -join ", ")
-        if (-not $Silent) {
-            Write-Host "[-] Auto-patch failed for targets: $failedTargets" -ForegroundColor Red
-            Write-Host "    Please ensure processes are closed or run PowerShell as Administrator." -ForegroundColor Yellow
-            Write-Host ""
-        }
-        Send-Notification -Title "Antigravity Patch Failed" -Message "Failed to patch: $failedTargets" -Type "Error"
-        exit 2
-    }
+if ($status.actionable_count -gt 0 -or $Force) {
+    $commandArgs = @("--check-and-patch", "--json")
+    if ($Force) { $commandArgs += "--force" }
+    $repaired = Invoke-PatchCommand -CommandArgs $commandArgs
+    $status = $repaired.Data.final_status
+    Show-StatusTable -components $status.components
+    $success = $repaired.Data.success -eq $true -and $repaired.ExitCode -eq 0
 } else {
-    # All components already patched
+    $success = $status.all_patched -eq $true -and $checked.ExitCode -eq 0
+}
+
+if ($success) {
     if (-not $Silent) {
-        Write-Host "[+] All installed Antigravity components are already patched and active!" -ForegroundColor Green
-        Write-Host ""
+        Write-Host "[+] Required local file patches are verified. Authentication is not checked." -ForegroundColor Green
     }
-    Send-Notification -Title "Antigravity Patch" -Message "All Antigravity components are verified and active!" -Type "Info"
+    Send-Notification -Title "Antigravity local patch status" -Message "Local file patches verified. Authentication not checked." -Type "Info"
     exit 0
 }
+
+$issues = $status.issue_components -join ", "
+if (-not $issues) { $issues = "No installations or incomplete verification" }
+if (-not $Silent) {
+    Write-Host "[!] Local patch coverage is incomplete: $issues" -ForegroundColor Yellow
+}
+Send-Notification -Title "Antigravity needs attention" -Message $issues -Type "Warning"
+exit 2
