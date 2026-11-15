@@ -29,6 +29,7 @@ const bodyLimit = 16 << 20
 
 // Set by the reproducible installer when compiling the launcher.
 var nativeSHA256 string
+var hubEnabled string
 
 type experience struct {
 	Name  string `json:"name"`
@@ -331,7 +332,7 @@ func run() int {
 	}
 	// Hub has a separate authentication and routing contract.
 	for _, arg := range os.Args[1:] {
-		if arg == "--hub" || strings.HasPrefix(arg, "--hub=") {
+		if hubEnabled != "true" && (arg == "--hub" || strings.HasPrefix(arg, "--hub=")) {
 			fmt.Fprintln(os.Stderr, "agy: AICode compatibility currently supports ordinary CLI only")
 			return 2
 		}
@@ -364,7 +365,20 @@ func run() int {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 	defer signal.Stop(interrupt)
-	err = cmd.Run()
+	err = cmd.Start()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "agy: cannot start native companion")
+		return 1
+	}
+	release, err := trackChild(cmd)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		fmt.Fprintln(os.Stderr, "agy: cannot track native companion lifetime:", err)
+		return 1
+	}
+	defer release()
+	err = cmd.Wait()
 	if err == nil {
 		return 0
 	}

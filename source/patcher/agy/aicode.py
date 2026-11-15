@@ -1,4 +1,4 @@
-"""Pinned Windows CLI compatibility patch with a server-configured experience adapter.
+"""Pinned Windows CLI/Hub/Manager compatibility with server experiences and quotas.
 
 This is separate from the historical eligibility gates: it preserves native OAuth,
 licensing and entitlement checks, and refuses unknown binaries.
@@ -20,7 +20,21 @@ SOURCE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/
 NATIVE_NAME = "agy-aicode-native.exe"
 MANIFEST_NAME = "agy-aicode-patch.json"
 RUNTIME = Path(__file__).with_name("aicode_runtime")
-PATCH_VERSION = 1
+PATCH_VERSION = 2
+MANAGER_SOURCE_HASHES = {
+    "33beef9814027cd5ed2ecbbcd0126645252c4b2516c0296e15091ca7e113b76f",  # existing local gate
+    "65cdb8d132fc61056625081be7d07d4d22f57eba485de7edf0d24d98e77c891f",  # original bundled build
+}
+MANAGER_PATCHES = (
+    (0x2809EA6, "488b9424e0020000", "488b9424d8020000"),
+    (0x2809EBD, "488b9424e0020000", "488b9424d8020000"),
+    (0x280A8B6, "488b9424d0020000", "488b9424c8020000"),
+    (0x2847565, "48c7401017000000488d1516a92c0148895008",
+     "488b542448488b120f1042300f114008909090"),
+    # Same ABI: delegate quota cache fetch to Google's existing AICode
+    # implementation, including its native quota-summary converter.
+    (0x28623C0, "4c8d6424d0", "e9dbb7faff"),
+)
 
 # File offsets in the hash-pinned official PE. Keep native stack frames, Go
 # safepoints and write barriers intact. Reuse a GC-scanned converter pointer
@@ -31,6 +45,7 @@ PATCHES = (
     (0x2743916, "488b9424d0020000", "488b9424c8020000"),  # non-stream constructor
     (0x27835B6, "48c7401017000000488d15eb80b00148895008",
      "488b542448488b120f1042300f114008909090"),
+    (0x279E7A0, "4c8d6424d0", "e95b84faff"),
 )
 
 
@@ -38,11 +53,23 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def patch_native(data: bytes) -> bytes:
-    if digest(data) != SOURCE_SHA256 or hashlib.sha512(data).hexdigest() != SOURCE_SHA512:
+def runtime_fingerprint() -> str:
+    files = sorted(p for p in RUNTIME.iterdir()
+                   if p.name == "go.mod" or (p.suffix == ".go" and not p.name.endswith("_test.go")))
+    return digest(b"".join(p.name.encode() + b"\0" + p.read_bytes() for p in files))
+
+
+def patch_native(data: bytes, profile="cli") -> bytes:
+    if profile not in ("cli", "hub", "manager"):
+        raise ValueError("Unknown AICode native profile")
+    patches = MANAGER_PATCHES if profile == "manager" else PATCHES
+    if profile == "manager":
+        if digest(data) not in MANAGER_SOURCE_HASHES:
+            raise ValueError("Expected audited Manager 2.32.1 Windows x64 build")
+    elif digest(data) != SOURCE_SHA256 or hashlib.sha512(data).hexdigest() != SOURCE_SHA512:
         raise ValueError("Expected pristine official agy 1.5.9 Windows x64; unknown or modified build")
     result = bytearray(data)
-    for offset, old_hex, new_hex in PATCHES:
+    for offset, old_hex, new_hex in patches:
         old, new = bytes.fromhex(old_hex), bytes.fromhex(new_hex)
         if len(old) != len(new) or result[offset:offset + len(old)] != old:
             raise ValueError(f"Native patch precondition failed at {offset:#x}")
@@ -79,44 +106,78 @@ def status(target: Path) -> dict:
     verified = {k: p.is_file() and not p.is_symlink() and digest(p.read_bytes()) == expected
                 for k, (p, expected) in checks.items()}
     return {"state": "installed" if all(verified.values()) else "modified", "checks": verified,
-            "patch_version": manifest["patch_version"], "native_version": "1.5.9"}
+            "patch_version": manifest["patch_version"], "native_version": manifest.get("native_version", "1.5.9"),
+            "profile": manifest.get("profile", "cli")}
 
 
-def build_launcher(output: Path, native_hash: str) -> None:
+def build_launcher(output: Path, native_hash: str, profile="cli") -> None:
     go = shutil.which("go")
     if not go:
         raise ValueError("Go compiler is required to build the compatibility launcher")
     env = dict(os.environ, GOOS="windows", GOARCH="amd64", CGO_ENABLED="0", GOTOOLCHAIN="local")
     subprocess.run([go, "build", "-trimpath", "-buildvcs=false", "-ldflags",
-                    f"-s -w -buildid= -X main.nativeSHA256={native_hash}", "-o", str(output), "."],
+                    f"-s -w -buildid= -X main.nativeSHA256={native_hash} -X main.hubEnabled={str(profile == 'hub').lower()}", "-o", str(output), "."],
                    cwd=RUNTIME, env=env, check=True)
 
 
-def install(target: Path, source: Path) -> dict:
+def install(target: Path, source: Path, profile="cli") -> dict:
     target = target.absolute()
     if os.name != "nt":
         raise ValueError("This pinned native patch supports Windows x64 only")
     if not target.is_file() or target.is_symlink():
         raise ValueError("Target must be an existing regular agy executable")
     backup, native, manifest_path = paths(target)
+    upgrading = False
     if manifest_path.exists():
         current = status(target)
-        if current["state"] == "installed" and current["patch_version"] == PATCH_VERSION:
+        old_manifest = json.loads(manifest_path.read_text("utf-8"))
+        if (current["state"] == "installed" and current["patch_version"] == PATCH_VERSION
+                and current.get("profile", "cli") == profile
+                and old_manifest.get("runtime_sha256") == runtime_fingerprint()):
             return current
-        raise ValueError("Existing compatibility installation differs; restore or review it first")
-    if backup.exists() or native.exists():
+        if (current["state"] == "installed" and current.get("profile", "cli") == profile
+                and current["patch_version"] in (1, 2) and PATCH_VERSION == 2):
+            upgrading = True
+        else:
+            raise ValueError("Existing compatibility installation differs; restore or review it first")
+    if not upgrading and (backup.exists() or native.exists()):
         raise ValueError("Companion or backup already exists without manifest; review before installing")
-    patched = patch_native(source.read_bytes())
-    previous = target.read_bytes()
+    source_data = source.read_bytes()
+    patched = patch_native(source_data, profile=profile)
+    previous = backup.read_bytes() if upgrading else target.read_bytes()
     with tempfile.TemporaryDirectory(prefix="agy-aicode-build-") as directory:
         launcher_path = Path(directory) / "agy.exe"
-        build_launcher(launcher_path, digest(patched))
+        if profile == "cli":
+            build_launcher(launcher_path, digest(patched))
+        else:
+            build_launcher(launcher_path, digest(patched), profile=profile)
         launcher = launcher_path.read_bytes()
-    manifest = {"patch_version": PATCH_VERSION, "native_version": "1.5.9",
-                "source_sha256": SOURCE_SHA256, "source_url": SOURCE_URL,
+    manifest = {"patch_version": PATCH_VERSION, "native_version": "2.32.1" if profile == "manager" else "1.5.9",
+                "runtime_sha256": runtime_fingerprint(),
+                "profile": profile, "source_sha256": digest(source_data),
+                "source_url": SOURCE_URL if profile != "manager" else "installed Manager 2.32.1 bundle",
                 "native_sha256": digest(patched), "launcher_sha256": digest(launcher),
                 "previous_sha256": digest(previous), "license_checks_preserved": True,
-                "changes": [{"offset": hex(at), "before": old, "after": new} for at, old, new in PATCHES]}
+                "changes": [{"offset": hex(at), "before": old, "after": new}
+                            for at, old, new in (MANAGER_PATCHES if profile == "manager" else PATCHES)]}
+    if upgrading:
+        # Windows maps active executables read-only. Fail before changing any
+        # file if a foreground app still owns either executable.
+        for executable in (target, native):
+            with executable.open("r+b"):
+                pass
+        old_files = {file: file.read_bytes() for file in (native, target, manifest_path)}
+        changed = []
+        try:
+            for file, content in ((native, patched), (target, launcher),
+                                  (manifest_path, (json.dumps(manifest, indent=2) + "\n").encode())):
+                atomic_write(file, content)
+                changed.append(file)
+        except Exception:
+            for file in reversed(changed):
+                atomic_write(file, old_files[file])
+            raise
+        return status(target)
     # Install companions first and expose the launcher last. Preserve old .agybak.
     atomic_write(backup, previous)
     try:
@@ -149,13 +210,20 @@ def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--agy-aicode", choices=("install", "status", "restore"), required=True)
     parser.add_argument("--target", type=Path, required=True)
-    parser.add_argument("--source", type=Path, help="Pristine official Windows x64 agy 1.5.9 executable")
+    parser.add_argument("--profile", choices=("cli", "hub", "manager", "ide"), default="cli")
+    parser.add_argument("--source", type=Path, help="Audited source executable for the selected Windows x64 profile")
     options = parser.parse_args(args)
     try:
+        if options.profile == "ide":
+            from patcher.ide.aicode import install as ide_install, status as ide_status, restore as ide_restore
+            operation = {"install": ide_install, "status": ide_status, "restore": ide_restore}[options.agy_aicode]
+            result = operation(options.target)
+            print(json.dumps(result, indent=2))
+            return 1 if result["state"] == "modified" else 0
         if options.agy_aicode == "install":
             if options.source is None:
                 parser.error("install requires --source")
-            result = install(options.target, options.source)
+            result = install(options.target, options.source, profile=options.profile)
         elif options.agy_aicode == "restore":
             result = restore(options.target)
         else:

@@ -51,11 +51,12 @@
 
 ## Обычный agy: AICode и динамический experience
 
-Для **Windows x64, официального CLI 1.5.9** добавлен отдельный патч совместимости.
+Для **Windows x64, CLI/Hub 1.5.9, Manager 2.32.1 и IDE 2.7.0** добавлен патч совместимости.
 Он включает штатный personal AICode-путь, передаёт выбранную модель вместо
 устаревшего `chat-gemini-3.1-pro-low` и сверяет её с текущим `fetchConfig`.
 OAuth и проверка лицензии остаются штатными. Бесплатный тариф должен быть
-предоставлен сервером. Этот режим относится к обычному CLI, не к `agy --hub`.
+предоставлен сервером. Для обычного CLI, Hub и Manager используются отдельные
+проверенные профили. IDE дополнительно получает исправление собственного входа.
 
 Нужны Python и Go 1.23+. В `--source` передаётся чистый официальный EXE 1.5.9
 (SHA-256 `8803c289cac04d6e53f2211592d9981c2d5760bc0d9b4a7f222ef6ecc7abb38a`).
@@ -70,6 +71,32 @@ agy --model gemini-3.8-flash-medium --print "Ответь одним слово�
 # Вернуть именно версию, стоявшую до установки этого патча:
 python source/main.py --agy-aicode restore --target "$target"
 ```
+
+Для установленных GUI-приложений сначала закройте их, затем примените профили:
+
+```powershell
+$hub = Join-Path $env:USERPROFILE '.gemini/bin/agy.exe'
+$manager = Join-Path $env:LOCALAPPDATA 'Programs/antigravity/resources/bin/language_server.exe'
+$ide = Join-Path $env:LOCALAPPDATA 'Programs/Antigravity IDE/resources/app/out/main.js'
+python source/main.py --agy-aicode install --profile hub --target "$hub" --source 'C:\Downloads\cli_windows_x64.exe'
+python source/main.py --agy-aicode install --profile manager --target "$manager" --source "$manager"
+python source/main.py --agy-aicode install --profile ide --target "$ide"
+```
+
+Версия патча 2 направляет запрос квот в штатный `FetchQuotaStatusFromAICode`:
+серверные группы, остатки и сроки сброса преобразуются самим клиентом в формат
+Models & Usage. Windows Job Object связывает native-компонент с launcher и
+устраняет зависшие процессы после закрытия приложений. Обновление v1 → v2
+сохраняет первоначальный backup; перед обновлением приложения нужно закрыть.
+Установщик поддерживает только проверенные хеши указанных сборок, в том числе
+известный исходный Manager и его ранее применённый локальный gate.
+
+Для проверки и отката GUI-профилей используйте те же `status`/`restore` с
+соответствующим `--profile` и `--target`; источник для них не требуется.
+При обновлении существующего Manager в `--source` можно передать сохранённый
+`language_server.exe.before-aicode`. Для запуска установленного патча Go не нужен.
+Реальная генерация и загрузка квот в обоих интерфейсах подтверждены после
+перезапуска. [Отчёт GUI и квот](docs/gui-aicode-and-quota-patch-2026-11-15.md).
 
 Имя модели в примере актуально на дату проверки; список берётся с сервера.
 Точный experience имеет приоритет. Неоднозначный `modelId` и неизвестная модель,
@@ -105,10 +132,11 @@ CLI из `PATH` и backend в `~/.gemini/bin/agy` отображаются от�
 При инвентаризации бинарники не запускаются; без подтверждённого источника
 их версия остаётся `null`.
 
-**Покрытие этого этапа:** обнаружение и достоверные статусы. Исправление нового
-пути авторизации Hub пока не реализовано. Наличие старого патча `main.js` или
+**Первоначальное покрытие этапа 2026-11-14:** обнаружение и достоверные статусы.
+Дальнейшее исправление Hub описано в разделе AICode выше. Наличие старого патча `main.js` или
 терминального CLI не подтверждает исправление входа в IDE. Поэтому Hub имеет
-`status=unsupported`, даже если `file_status=patched` для старой CLI-сигнатуры.
+`status=unsupported` для legacy-сборок, даже если `file_status=patched` для старой CLI-сигнатуры.
+Проверенная установка AICode отображается как `patched` после проверки manifest и хешей.
 Для оболочки и загрузчика современной IDE старый патч отмечен `not_applicable`.
 
 Проверка без изменения файлов, конфигурации и авторизации:

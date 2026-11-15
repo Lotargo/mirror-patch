@@ -308,6 +308,17 @@ def do_patch(main_js_path, show_search_line=False):
 def do_restore(main_js_path, show_search_line=False):
     from patcher.cli import confirmed
 
+    from pathlib import Path
+    from patcher.ide import aicode
+    if main_js_path and aicode.paths(Path(main_js_path))[1].is_file():
+        if confirmed("Restore IDE frontend saved before AICode compatibility installation?"):
+            try:
+                aicode.restore(Path(main_js_path))
+                ok("Previous IDE frontend restored.")
+            except (ValueError, OSError, KeyError) as exc:
+                err(f"Compatibility restore failed: {exc}")
+        return
+
     current_content = None
     try:
         with open(main_js_path, "r", encoding="utf-8") as f:

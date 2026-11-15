@@ -192,6 +192,14 @@ def get_status(path, *, strict=False):
     if not path:
         return ("missing", None)
     try:
+        from pathlib import Path
+        from patcher.agy import aicode
+        if Path(path).with_name(aicode.MANIFEST_NAME).is_file():
+            try:
+                result = aicode.status(Path(path))
+                return ("patched" if result["state"] == "installed" and result.get("profile") == "manager" else "unknown", None)
+            except (ValueError, KeyError):
+                return ("unknown", None)
         with _mapped(path) as d:
             try:
                 state, off, g = MANAGER_GATE.resolve(d)
@@ -246,6 +254,12 @@ def _make_backup(path):
 def do_patch_manager(path):
     from patcher.cli import confirmed
     from patcher.utils.captcha import confirm_with_captcha
+
+    from pathlib import Path
+    from patcher.agy import aicode
+    if path and Path(path).with_name(aicode.MANIFEST_NAME).is_file():
+        hint("AICode compatibility installation detected; legacy Manager gate is not reapplied.")
+        return
 
     if not path or not os.path.isfile(path):
         from patcher.cli import offer_download_and_block
@@ -411,6 +425,17 @@ def do_patch_manager(path):
 
 def do_restore_manager(path):
     from patcher.cli import confirmed
+
+    from pathlib import Path
+    from patcher.agy import aicode
+    if path and Path(path).with_name(aicode.MANIFEST_NAME).is_file():
+        if confirmed("Restore Manager executable saved before AICode compatibility installation?"):
+            try:
+                aicode.restore(Path(path))
+                ok("Previous Manager executable restored.")
+            except (ValueError, OSError, KeyError) as exc:
+                err(f"Compatibility restore failed: {exc}")
+        return
 
     if not os.path.isfile(path):
         err(f"Target is not a file: {path}")

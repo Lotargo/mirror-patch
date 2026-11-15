@@ -92,6 +92,10 @@ def _inspect_binary(component, path, scanner, cache):
         component["version"] = component["auth_profile"]["version"]
         component["auth_probe_supported"] = component["auth_profile"]["supported"]
         component["reason"] = "Hub auth diagnostics are read-only; CLI markers do not establish successful Hub login."
+        if component["auth_profile"]["binary_state"] == "aicode_compatibility":
+            _state(component, "patched")
+            component["patch_scope"] = "aicode_hub"
+            component["reason"] = "AICode Hub compatibility is installed; runtime authentication is checked separately."
 
 
 def summarize_components(components):
@@ -152,6 +156,15 @@ def get_components_status(targets=None):
                 ide["profile"] = "ide_hub"
                 _state(ide, "not_applicable")
                 ide["reason"] = "IDE >= 2.6 uses the built-in extension and agy --hub; main.js is legacy coverage."
+                from pathlib import Path
+                from patcher.ide import aicode as ide_aicode
+                if ide_aicode.paths(Path(main))[1].is_file():
+                    compatibility = ide_aicode.status(Path(main))
+                    state = "patched" if compatibility["state"] == "installed" else "unknown"
+                    _state(ide, state)
+                    ide["profile"] = "aicode_ide"
+                    ide["file_status"] = state
+                    ide["reason"] = "Personal AICode licensing frontend; Hub generation is tracked separately."
             else:
                 ide["profile"] = "ide_legacy"
     except Exception as exc:

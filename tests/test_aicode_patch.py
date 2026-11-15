@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -21,7 +22,7 @@ class NativePatchTests(unittest.TestCase):
         original = fixture.read_bytes()
         result = aicode.patch_native(original)
         self.assertEqual(len(result), len(original))
-        self.assertEqual(aicode.digest(result), "f4aa5af8dec3ce520d801411f6a52e9f3dcfe9014d1285c98715519623cef7f9")
+        self.assertEqual(aicode.digest(result), "e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794")
         restored = bytearray(result)
         for at, before, after in aicode.PATCHES:
             replacement = bytes.fromhex(after)
@@ -96,6 +97,44 @@ class InstallationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.install()
         self.assertEqual(backup.read_bytes(), b"valuable original")
+
+    def test_upgrade_keeps_original_backup_and_updates_native(self):
+        self.install()
+        backup, native, manifest_path = aicode.paths(self.target)
+        old = json.loads(manifest_path.read_text())
+        old["patch_version"] = 1
+        old.pop("runtime_sha256", None)
+        manifest_path.write_text(json.dumps(old))
+        with patch.object(aicode, "patch_native", return_value=b"quota-enabled native"):
+            self.assertEqual(self.install()["state"], "installed")
+        self.assertEqual(native.read_bytes(), b"quota-enabled native")
+        self.assertEqual(backup.read_bytes(), b"previous installed agy")
+        self.assertEqual(aicode.restore(self.target)["state"], "restored")
+        self.assertEqual(self.target.read_bytes(), b"previous installed agy")
+
+    def test_upgrade_rolls_back_when_launcher_replacement_fails(self):
+        self.install()
+        backup, native, manifest_path = aicode.paths(self.target)
+        old = json.loads(manifest_path.read_text())
+        old["patch_version"] = 1
+        manifest_path.write_text(json.dumps(old))
+        real_write = aicode.atomic_write
+        def fail_launcher(path, data):
+            if path == self.target:
+                raise PermissionError("active launcher")
+            real_write(path, data)
+        with patch.object(aicode, "patch_native", return_value=b"new native"):
+            with patch.object(aicode, "atomic_write", side_effect=fail_launcher):
+                with self.assertRaises(PermissionError):
+                    self.install()
+        self.assertEqual(native.read_bytes(), self.native)
+        self.assertEqual(aicode.status(self.target)["state"], "installed")
+        self.assertEqual(backup.read_bytes(), b"previous installed agy")
+
+    def test_profile_change_is_not_an_implicit_upgrade(self):
+        self.install()
+        with self.assertRaises(ValueError):
+            aicode.install(self.target, self.source, profile="hub")
 
 
 if __name__ == "__main__":
