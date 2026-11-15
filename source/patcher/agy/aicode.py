@@ -22,12 +22,12 @@ SOURCE_URL = "https://storage.googleapis.com/antigravity-public/antigravity-cli/
 NATIVE_NAME = "agy-aicode-native.exe"
 MANIFEST_NAME = "agy-aicode-patch.json"
 RUNTIME = Path(__file__).with_name("aicode_runtime")
-PATCH_VERSION = 2
+PATCH_VERSION = 4
 PREBUILT_NATIVE_HASHES = {
-    "cli": ("e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794",),
-    "hub": ("e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794",),
-    "manager": ("f6bbfcc78c30aff2d520605563888c5d026fe737c47046fb8597747f8ea5c83c",
-                "be201731a12046cd8c5a837d6a5d00dc99f7968d172dee21f905625ef22daea1"),
+    "cli": ("8c033def5d690d24bd8d2552517a7086965858e374d88091071466e263d09cec",),
+    "hub": ("8c033def5d690d24bd8d2552517a7086965858e374d88091071466e263d09cec",),
+    "manager": ("b3fec35b68d5599ae0c0421304dee1e42de7cb1615bbe152a85e6383abecd9da",
+                "62bd5e6ebdc97b10bb3f2359987d770a45158f41f87f4db01e449ec56d25df9d"),
 }
 MANAGER_SOURCE_HASHES = {
     "33beef9814027cd5ed2ecbbcd0126645252c4b2516c0296e15091ca7e113b76f",  # existing local gate
@@ -42,6 +42,15 @@ MANAGER_PATCHES = (
     # Same ABI: delegate quota cache fetch to Google's existing AICode
     # implementation, including its native quota-summary converter.
     (0x28623C0, "4c8d6424d0", "e9dbb7faff"),
+    # Keep the gRPC endpoint separate from the local HTTP compatibility adapter.
+    # Preserve prologue, argument spills, stack maps and the original epilogue;
+    # return the existing read-only production host string without new calls.
+    (0x2809C3F, "90e8fb790300e836b5affd4885db751b4889442450",
+     "488d057b5d3201bb19000000e91e00000090909090"),
+    # getAICodeRemoteURL supplies the gRPC RAP/Voice target independently of
+    # prediction routing. Ignore the HTTP adapter override here; keep Google's
+    # existing default, native OAuth and StreamVoice protocol unchanged.
+    (0x284C74E, "e8cd218efd", "31c031db90"),
 )
 
 # File offsets in the hash-pinned official PE. Keep native stack frames, Go
@@ -54,6 +63,9 @@ PATCHES = (
     (0x27835B6, "48c7401017000000488d15eb80b00148895008",
      "488b542448488b120f1042300f114008909090"),
     (0x279E7A0, "4c8d6424d0", "e95b84faff"),
+    (0x2742C9F, "90e8fba90300e856cbbdfd4885db751b4889442450",
+     "488d058c91b601bb19000000e91e00000090909090"),
+    (0x2788B2E, "e84d789afd", "31c031db90"),
 )
 
 
@@ -197,7 +209,7 @@ def install(target: Path, source: Path | None = None, profile="cli") -> dict:
                 and old_manifest.get("runtime_sha256") == runtime_fingerprint()):
             return current
         if (current["state"] == "installed" and current.get("profile", "cli") == profile
-                and current["patch_version"] in (1, 2) and PATCH_VERSION == 2):
+                and current["patch_version"] in (1, 2, 3, 4) and PATCH_VERSION == 4):
             upgrading = True
         else:
             raise ValueError("Existing compatibility installation differs; restore or review it first")

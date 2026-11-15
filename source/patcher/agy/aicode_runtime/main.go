@@ -67,13 +67,21 @@ func (c config) candidates() []experience {
 			seen[name] = true
 		}
 	}
+	// UI ordering defines the default, not the complete prediction API catalog.
+	// Flash Lite and image experiences can be published outside the agent picker.
+	for _, e := range c.Experiences {
+		if published, ok := byName[e.Name]; ok && !seen[e.Name] {
+			result = append(result, published)
+			seen[e.Name] = true
+		}
+	}
 	return result
 }
 
 func (c config) selectExperience(requested string, explicit bool) (string, error) {
 	choices := c.candidates()
 	if len(choices) == 0 {
-		return "", errors.New("fetchConfig contains no enabled agent experiences with a model")
+		return "", errors.New("fetchConfig contains no enabled experiences with a model")
 	}
 	want := strings.TrimPrefix(requested, "models/")
 	for _, e := range choices {
@@ -93,11 +101,15 @@ func (c config) selectExperience(requested string, explicit bool) (string, error
 	if len(matches) > 1 {
 		return "", fmt.Errorf("model is ambiguous; select an experience: %s", strings.Join(matches, ", "))
 	}
-	if explicit {
-		return "", fmt.Errorf("selected model %q is absent from fetchConfig; available experiences: %s", want, choiceNames(choices))
+	if !explicit && (want == "" || want == "chat-gemini-3.1-pro-low") {
+		// Only the audited native default may follow server UI ordering. An
+		// unknown RPC model is a real selection, even without a CLI --model flag.
+		return choices[0].Name, nil
 	}
-	// Native default may refer to a removed model. Follow server UI ordering.
-	return choices[0].Name, nil
+	if strings.HasPrefix(want, "tab_") {
+		return "", fmt.Errorf("Tab model %q is not published in fetchConfig; this AICode route cannot select it", want)
+	}
+	return "", fmt.Errorf("selected model %q is absent from fetchConfig; available experiences: %s", want, choiceNames(choices))
 }
 
 func choiceNames(choices []experience) string {
@@ -281,6 +293,7 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(flushingWriter{w}, resp.Body)

@@ -34,22 +34,56 @@ func TestSelectionUsesServerOrderAndExplicitChoice(t *testing.T) {
 		explicit bool
 		expected string
 	}{
-		{"obsolete-native-default", false, "future-medium"}, {"future-high", true, "future-high"},
+		{"chat-gemini-3.1-pro-low", false, "future-medium"}, {"future-high", true, "future-high"},
 		{"models/future-medium", true, "future-medium"}, {"Future High", true, "future-high"}, {"other-model", true, "other"},
+		{"hidden", true, "hidden"}, {"hidden", false, "hidden"},
 	} {
 		got, err := c.selectExperience(tc.want, tc.explicit)
 		if err != nil || got != tc.expected {
 			t.Fatalf("%+v: %q %v", tc, got, err)
 		}
 	}
-	for _, want := range []string{"hidden", "disabled", "unknown", "future"} {
+	for _, want := range []string{"disabled", "unknown", "future"} {
 		if _, err := c.selectExperience(want, true); err == nil {
 			t.Fatalf("accepted unavailable or ambiguous model %q", want)
 		}
 	}
+	if _, err := c.selectExperience("unknown-sdk-rpc-model", false); err == nil {
+		t.Fatal("RPC model silently fell back without a CLI model flag")
+	}
+	if _, err := c.selectExperience("tab_missing", false); err == nil || !strings.Contains(err.Error(), "Tab model") {
+		t.Fatal("unpublished Tab model did not report its unsupported route", err)
+	}
 	c.Surface.Agent.Names = []string{"future-high", "future-medium"}
-	if got, _ := c.selectExperience("obsolete-native-default", false); got != "future-high" {
+	if got, _ := c.selectExperience("chat-gemini-3.1-pro-low", false); got != "future-high" {
 		t.Fatal("server configuration change was ignored")
+	}
+}
+
+func TestPredictionCatalogIncludesLiteAndImagesOutsideAgentPicker(t *testing.T) {
+	c, err := decodeConfig([]byte(`{"availableExperiences":[
+        {"name":"lite","model":{"modelId":"flash-lite"}},
+        {"name":"image","model":{"name":"models/flash-image"}},
+        {"name":"agent","model":{"modelId":"flash"}},
+        {"name":"disabled","model":{"displayName":"Disabled"}}],
+        "agySurfaceConfig":{"agentExperiences":{"experienceNames":["agent"]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"lite", "image", "agent"} {
+		if got, err := c.selectExperience(name, true); err != nil || got != name {
+			t.Fatal(name, got, err)
+		}
+	}
+	if got, _ := c.selectExperience("", false); got != "agent" {
+		t.Fatal("default ignored UI order", got)
+	}
+	if _, err := c.selectExperience("disabled", true); err == nil {
+		t.Fatal("disabled model accepted")
+	}
+	c.Surface.Agent.Names = nil
+	if got, _ := c.selectExperience("", false); got != "lite" {
+		t.Fatal("non-agent catalog rejected", got)
 	}
 }
 

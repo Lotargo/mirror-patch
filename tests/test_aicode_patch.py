@@ -1,5 +1,6 @@
 import os
 import json
+import struct
 from pathlib import Path
 import sys
 import tempfile
@@ -11,6 +12,28 @@ from patcher.agy import aicode
 
 
 class NativePatchTests(unittest.TestCase):
+    def test_grpc_patch_targets_existing_read_only_host_and_native_epilogue(self):
+        fixture = Path(__file__).resolve().parents[1] / "test_cache/1.5.9__agy_cli_windows_x64.zip extracted/antigravity.exe"
+        if not fixture.is_file():
+            self.skipTest("Optional audited Windows CLI fixture")
+        data = aicode.patch_native(fixture.read_bytes())
+        pe = struct.unpack_from("<I", data, 0x3c)[0]
+        opt = pe + 24
+        base = struct.unpack_from("<Q", data, opt + 24)[0]
+        count = struct.unpack_from("<H", data, pe + 6)[0]
+        opt_size = struct.unpack_from("<H", data, pe + 20)[0]
+        sections = [struct.unpack_from("<IIII", data, opt + opt_size + i * 40 + 8) for i in range(count)]
+        def offset(va):
+            return next(at + va - base - rva for _, rva, size, at in sections
+                        if base + rva <= va < base + rva + size)
+        at, va = 0x2742C9F, 0x14274369F
+        self.assertEqual(data[at:at+3], b"\x48\x8d\x05")
+        host = va + 7 + struct.unpack_from("<i", data, at + 3)[0]
+        size = struct.unpack_from("<I", data, at + 8)[0]
+        self.assertEqual(data[offset(host):offset(host)+size], b"aicode.googleapis.com:443")
+        epilogue = va + 17 + struct.unpack_from("<i", data, at + 13)[0]
+        self.assertEqual(data[offset(epilogue):offset(epilogue)+6], bytes.fromhex("4883c4605dc3"))
+
     def test_unknown_build_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "pristine official"):
             aicode.patch_native(b"MZ not the pinned upstream")
@@ -22,7 +45,7 @@ class NativePatchTests(unittest.TestCase):
         original = fixture.read_bytes()
         result = aicode.patch_native(original)
         self.assertEqual(len(result), len(original))
-        self.assertEqual(aicode.digest(result), "e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794")
+        self.assertEqual(aicode.digest(result), "8c033def5d690d24bd8d2552517a7086965858e374d88091071466e263d09cec")
         restored = bytearray(result)
         for at, before, after in aicode.PATCHES:
             replacement = bytes.fromhex(after)
@@ -130,6 +153,20 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(native.read_bytes(), self.native)
         self.assertEqual(aicode.status(self.target)["state"], "installed")
         self.assertEqual(backup.read_bytes(), b"previous installed agy")
+
+    def test_v2_and_v3_upgrades_preserve_original_backup(self):
+        self.install()
+        backup, native, manifest_path = aicode.paths(self.target)
+        for version in (2, 3):
+            with self.subTest(version=version):
+                manifest = json.loads(manifest_path.read_text())
+                manifest["patch_version"] = version
+                manifest_path.write_text(json.dumps(manifest))
+                updated = f"grpc-separated native from v{version}".encode()
+                with patch.object(aicode, "patch_native", return_value=updated):
+                    self.assertEqual(self.install()["patch_version"], aicode.PATCH_VERSION)
+                self.assertEqual(native.read_bytes(), updated)
+                self.assertEqual(backup.read_bytes(), b"previous installed agy")
 
     def test_profile_change_is_not_an_implicit_upgrade(self):
         self.install()
