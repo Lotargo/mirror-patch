@@ -132,6 +132,7 @@ type adapter struct {
 	configs          map[[32]byte]cachedConfig
 	onSelection      func(string)
 	googleSafetyFile string
+	modelCatalogFile string
 }
 
 func newAdapter(nonce string, explicit bool) *adapter {
@@ -201,6 +202,9 @@ func (a *adapter) getConfig(ctx context.Context, headers http.Header) (config, e
 	c, err := decodeConfig(b)
 	if err != nil {
 		return config{}, err
+	}
+	if err := writeModelCatalog(a.modelCatalogFile, b); err != nil {
+		return config{}, errors.New("cannot write model publication metadata")
 	}
 	a.configs[key] = cachedConfig{c, time.Now().Add(5 * time.Minute)}
 	return c, nil
@@ -300,6 +304,14 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+	if path == "/v1alpha:fetchConfig" && resp.StatusCode == 200 && a.modelCatalogFile != "" {
+		payload, err := readBounded(resp.Body)
+		if err != nil || writeModelCatalog(a.modelCatalogFile, payload) != nil {
+			fail(w, 502, "cannot capture model publication metadata")
+			return
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(payload))
+	}
 	writeGoogleSafetyReceipt(a.googleSafetyFile, selected, safetyPolicy, resp.StatusCode, b)
 
 	copyHeaders(w.Header(), resp.Header)
@@ -335,7 +347,7 @@ func overrideEnv(env []string, overrides map[string]string) []string {
 
 func run() int {
 	if len(os.Args) == 2 && os.Args[1] == "--agy-compat-capabilities" {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"google_safety_settings_file": 1})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"google_safety_settings_file": 1, "model_catalog_file": 1})
 		return 0
 	}
 	exe, err := os.Executable()
@@ -375,6 +387,7 @@ func run() int {
 	nonce := hex.EncodeToString(random[:])
 	a := newAdapter(nonce, explicitModel(os.Args[1:]))
 	a.googleSafetyFile = os.Getenv(googleSafetyEnv)
+	a.modelCatalogFile = os.Getenv(modelCatalogEnv)
 	if a.googleSafetyFile != "" {
 		if _, err := readGoogleSafetyPolicy(a.googleSafetyFile); err != nil {
 			fmt.Fprintln(os.Stderr, "agy:", err)
