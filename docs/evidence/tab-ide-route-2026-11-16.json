@@ -1,0 +1,125 @@
+{
+  "date": "2026-11-16",
+  "method": "installed IDE source and same-build native RPC diagnostic; no graphical IDE action captured",
+  "sources": {
+    "ide_extension": {
+      "sha256": "d72b6633caf3119aba1ac4bfadf1fdac9f4d5292da85b193938814eff16d835c",
+      "bytes": 1462852
+    },
+    "original_converter_backup": {
+      "sha256": "65cdb8d132fc61056625081be7d07d4d22f57eba485de7edf0d24d98e77c891f",
+      "bytes": 215547392
+    },
+    "patched_native": {
+      "sha256": "b3fec35b68d5599ae0c0421304dee1e42de7cb1615bbe152a85e6383abecd9da",
+      "bytes": 215547392
+    }
+  },
+  "same_IDE_fields_through_current_launcher": {
+    "case": "official_IDE_fields_no_model_override",
+    "events": [],
+    "code": "provider_error",
+    "frames": 1,
+    "seconds": 8.42
+  },
+  "fixed_host_network_comparison": [
+    {
+      "case": "patched_converter",
+      "route": "aicode",
+      "prediction": [
+        {
+          "method": "POST",
+          "path": "/v1alpha:streamGenerateContent",
+          "experience": "tab_flash_lite_preview",
+          "body_keys": [
+            "aicode",
+            "contents",
+            "entitlement",
+            "generationConfig",
+            "sessionId",
+            "systemInstruction"
+          ],
+          "aicode_keys": [
+            "experience"
+          ],
+          "header_names": [
+            "accept-encoding",
+            "content-length",
+            "content-type",
+            "host",
+            "user-agent"
+          ],
+          "http_status": 404,
+          "provider_error": {
+            "code": 404,
+            "status": "NOT_FOUND",
+            "message": "Requested entity was not found."
+          }
+        }
+      ],
+      "fetch_licenses_statuses": [
+        200
+      ],
+      "tab_in_published_config": false
+    },
+    {
+      "case": "original_converter",
+      "route": "aicode",
+      "prediction": [
+        {
+          "method": "POST",
+          "path": "/v1alpha:streamGenerateContent",
+          "experience": "chat-gemini-3.1-pro-low",
+          "body_keys": [
+            "aicode",
+            "contents",
+            "entitlement",
+            "generationConfig",
+            "sessionId",
+            "systemInstruction"
+          ],
+          "aicode_keys": [
+            "experience"
+          ],
+          "header_names": [
+            "accept-encoding",
+            "content-length",
+            "content-type",
+            "host",
+            "user-agent"
+          ],
+          "http_status": 404,
+          "provider_error": {
+            "code": 404,
+            "status": "NOT_FOUND",
+            "message": "Requested entity was not found."
+          }
+        }
+      ],
+      "fetch_licenses_statuses": [
+        200
+      ],
+      "tab_in_published_config": false
+    },
+    {
+      "case": "legacy_ccpa",
+      "route": "ccpa",
+      "prediction": [
+        {
+          "method": "POST",
+          "path": "/v1internal:streamGenerateContent",
+          "http_status": 403,
+          "provider_error": {
+            "code": 403,
+            "status": "PERMISSION_DENIED",
+            "message": "You do not have a valid license of this product. Please contact your administrator to request a license. If you are not an enterprise user and believe you are receiving this message as an error, please try using the latest version and logging in again. (#3501)"
+          }
+        }
+      ],
+      "fetch_licenses_statuses": [],
+      "tab_in_published_config": null
+    }
+  ],
+  "privacy": "OAuth headers, account IDs, document contents and prompt text were not recorded by relay",
+  "native_replay_guard": "2.32.1 enabled only in diagnostic Python process; production SDK version guard unchanged"
+}
