@@ -23,11 +23,11 @@ def inspect_backend(path):
     result["sha256"] = digest
     manifest_path = Path(path).with_name("agy-aicode-patch.json")
     if manifest_path.is_file():
-        from patcher.agy.aicode import status
+        from patcher.agy.aicode import status, PREBUILT_NATIVE_HASHES
         try:
             manifest = json.loads(manifest_path.read_text("utf-8"))
             if (manifest.get("profile") == "hub" and status(Path(path))["state"] == "installed"
-                    and manifest.get("native_sha256") in {
+                    and manifest.get("native_sha256") in set(PREBUILT_NATIVE_HASHES['hub']) | {
                         "f4aa5af8dec3ce520d801411f6a52e9f3dcfe9014d1285c98715519623cef7f9",
                         "e903bb38c63a58a7e4bde7099ae02879f4ab65e6d7c1f5a772d2822e2aa26794"}):
                 result.update(supported=True, version="1.5.9", platform="windows_x64", binary_state="aicode_compatibility")

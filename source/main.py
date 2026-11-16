@@ -7,6 +7,9 @@ from patcher.cli import run_cli, confirmed
 
 
 if __name__ == "__main__":
+    if "--desktop-patcher" in sys.argv:
+        from patcher.desktop_helper import main as desktop_main
+        sys.exit(desktop_main(sys.argv[sys.argv.index("--desktop-patcher")+1:]))
     if "--version" in sys.argv:
         from patcher.constants import PROJECT_NAME, VERSION
         print(f"{PROJECT_NAME} {VERSION}")

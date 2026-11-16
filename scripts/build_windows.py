@@ -86,6 +86,18 @@ def build(output: Path, work: Path):
             "pyinstaller": importlib.metadata.version("PyInstaller"),
             "exe_sha256": digest((output / "MirrorPatch-windows-x64.exe").read_bytes())}
     (output / "build-info.json").write_text(json.dumps(info, indent=2) + "\n", "utf-8")
+    # Portable desktop integrations carry the matching sources, including local
+    # changes. This does not replace the clean-commit release packaging below.
+    for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
+        shutil.copyfile(ROOT / name, output / name)
+    with zipfile.ZipFile(output / "helper-source.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        paths = [ROOT / "LICENSE", ROOT / "THIRD_PARTY_NOTICES.md", ROOT / "requirements.txt"]
+        for folder in ("source", "scripts", "tests", "licenses"):
+            paths += [p for p in (ROOT / folder).rglob("*") if p.is_file() and
+                      (p.suffix in (".py", ".go", ".mod", ".txt") or p.name == "LICENSE") and
+                      "__pycache__" not in p.parts]
+        for p in sorted(set(paths)):
+            if p.is_file(): archive.write(p, p.relative_to(ROOT).as_posix())
 
 
 def package(output: Path, work: Path):
