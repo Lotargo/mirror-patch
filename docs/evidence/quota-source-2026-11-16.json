@@ -1,0 +1,161 @@
+{
+  "date": "2026-11-16",
+  "route": "GET https://aicode.googleapis.com/v1alpha:fetchQuotaStatus",
+  "upstream": [
+    {
+      "status": 200,
+      "body": {
+        "buckets": [
+          {
+            "remainingFraction": 0.803001,
+            "resetTime": "2026-11-22T12:54:29Z",
+            "model": {
+              "modelId": "claude-opus-4-6",
+              "displayName": "Claude Opus 4.6",
+              "description": "Claude Opus 4.6"
+            }
+          },
+          {
+            "remainingFraction": 0.803001,
+            "resetTime": "2026-11-22T12:54:29Z",
+            "model": {
+              "modelId": "claude-sonnet-4-6",
+              "displayName": "Claude Sonnet 4.6",
+              "description": "Claude Sonnet 4.6"
+            }
+          },
+          {
+            "remainingFraction": 0.803001,
+            "resetTime": "2026-11-22T12:54:29Z",
+            "model": {
+              "modelId": "gpt-oss-120b",
+              "displayName": "GPT-OSS 120B",
+              "description": "GPT-OSS 120B"
+            }
+          },
+          {
+            "remainingFraction": 0.4683456,
+            "resetTime": "2026-11-22T10:26:07Z",
+            "model": {
+              "modelId": "gemini-3.1-flash-image",
+              "displayName": "Gemini 3.1 Flash Image",
+              "description": "Gemini 3.1 Flash Image Preview"
+            }
+          },
+          {
+            "remainingFraction": 0.4683456,
+            "resetTime": "2026-11-22T10:26:07Z",
+            "model": {
+              "modelId": "gemini-3.5-flash-lite",
+              "displayName": "Gemini 3.5 Flash Lite",
+              "description": "Gemini 3.5 Flash Lite"
+            }
+          },
+          {
+            "remainingFraction": 0.4683456,
+            "resetTime": "2026-11-22T10:26:07Z",
+            "model": {
+              "modelId": "gemini-3.8-flash",
+              "displayName": "Gemini 3.8 Flash",
+              "description": "Gemini 3.8 Flash"
+            }
+          }
+        ],
+        "quotaSummary": {
+          "description": "Within each group, models share a weekly limit. Quota is consumed proportionally to the cost of the tokens. Thus, limits will last longer with shorter tasks or using more cost-effective models. Your weekly limit is tied directly to your individual tier.",
+          "groups": [
+            {
+              "displayName": "Gemini Models",
+              "description": "Models within this group: Gemini Flash, Gemini Pro",
+              "buckets": [
+                {
+                  "bucketId": "gemini-weekly",
+                  "displayName": "Weekly Limit Remaining",
+                  "refreshWindowLabel": "weekly",
+                  "remainingFraction": 1,
+                  "resetTime": "2026-11-23T11:30:15Z"
+                }
+              ]
+            },
+            {
+              "displayName": "Claude and GPT models",
+              "description": "Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+              "buckets": [
+                {
+                  "bucketId": "3p-weekly",
+                  "displayName": "Weekly Limit Remaining",
+                  "refreshWindowLabel": "weekly",
+                  "remainingFraction": 1,
+                  "resetTime": "2026-11-23T11:30:15Z"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "native_summary": {
+    "response": {
+      "groups": [
+        {
+          "displayName": "Gemini Models",
+          "description": "Models within this group: Gemini Flash, Gemini Pro",
+          "buckets": [
+            {
+              "bucketId": "gemini-weekly",
+              "displayName": "Weekly Limit Remaining",
+              "window": "weekly",
+              "remainingFraction": 1,
+              "resetTime": "2026-11-23T11:30:15Z"
+            }
+          ]
+        },
+        {
+          "displayName": "Claude and GPT models",
+          "description": "Models within this group: Claude Opus, Claude Sonnet, GPT-OSS",
+          "buckets": [
+            {
+              "bucketId": "3p-weekly",
+              "displayName": "Weekly Limit Remaining",
+              "window": "weekly",
+              "remainingFraction": 1,
+              "resetTime": "2026-11-23T11:30:15Z"
+            }
+          ]
+        }
+      ],
+      "description": "Within each group, models share a weekly limit. Quota is consumed proportionally to the cost of the tokens. Thus, limits will last longer with shorter tasks or using more cost-effective models. Your weekly limit is tied directly to your individual tier."
+    }
+  },
+  "native_catalog_quota": [
+    {
+      "id": "claude-opus-4-6-thinking",
+      "quota": {
+        "remainingFraction": 1,
+        "resetTime": "2026-11-23T11:30:14Z"
+      }
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "quota": {
+        "remainingFraction": 1,
+        "resetTime": "2026-11-23T11:30:14Z"
+      }
+    },
+    {
+      "id": "gemini-3.1-flash-image",
+      "quota": {
+        "remainingFraction": 1,
+        "resetTime": "2026-11-23T11:30:14Z"
+      }
+    },
+    {
+      "id": "gemini-3.8-flash-low",
+      "quota": {
+        "remainingFraction": 1,
+        "resetTime": "2026-11-23T11:30:14Z"
+      }
+    }
+  ]
+}

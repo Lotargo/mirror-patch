@@ -133,6 +133,7 @@ type adapter struct {
 	onSelection      func(string)
 	googleSafetyFile string
 	modelCatalogFile string
+	quotaStatusFile  string
 }
 
 func newAdapter(nonce string, explicit bool) *adapter {
@@ -312,6 +313,19 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Body = io.NopCloser(bytes.NewReader(payload))
 	}
+	if path == "/v1alpha:fetchQuotaStatus" && resp.StatusCode == 200 {
+		payload, err := readBounded(resp.Body)
+		if err != nil || writeQuotaStatus(a.quotaStatusFile, payload) != nil {
+			fail(w, 502, "cannot capture quota metadata")
+			return
+		}
+		corrected, err := correctQuotaSummary(payload)
+		if err != nil {
+			fail(w, 502, "invalid quota status response")
+			return
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(corrected))
+	}
 	writeGoogleSafetyReceipt(a.googleSafetyFile, selected, safetyPolicy, resp.StatusCode, b)
 
 	copyHeaders(w.Header(), resp.Header)
@@ -347,7 +361,7 @@ func overrideEnv(env []string, overrides map[string]string) []string {
 
 func run() int {
 	if len(os.Args) == 2 && os.Args[1] == "--agy-compat-capabilities" {
-		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"google_safety_settings_file": 1, "model_catalog_file": 1})
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"google_safety_settings_file": 1, "model_catalog_file": 1, "quota_status_file": 1})
 		return 0
 	}
 	exe, err := os.Executable()
@@ -388,6 +402,9 @@ func run() int {
 	a := newAdapter(nonce, explicitModel(os.Args[1:]))
 	a.googleSafetyFile = os.Getenv(googleSafetyEnv)
 	a.modelCatalogFile = os.Getenv(modelCatalogEnv)
+	if a.modelCatalogFile != "" {
+		a.quotaStatusFile = a.modelCatalogFile + ".quota.json"
+	}
 	if a.googleSafetyFile != "" {
 		if _, err := readGoogleSafetyPolicy(a.googleSafetyFile); err != nil {
 			fmt.Fprintln(os.Stderr, "agy:", err)
