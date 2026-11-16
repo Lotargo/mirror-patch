@@ -125,12 +125,13 @@ type cachedConfig struct {
 	expires time.Time
 }
 type adapter struct {
-	client      *http.Client
-	nonce       string
-	explicit    bool
-	mu          sync.Mutex
-	configs     map[[32]byte]cachedConfig
-	onSelection func(string)
+	client           *http.Client
+	nonce            string
+	explicit         bool
+	mu               sync.Mutex
+	configs          map[[32]byte]cachedConfig
+	onSelection      func(string)
+	googleSafetyFile string
 }
 
 func newAdapter(nonce string, explicit bool) *adapter {
@@ -268,13 +269,14 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "request exceeds size limit")
 		return
 	}
+	var safetyPolicy *googleSafetyPolicy
+	var selected string
 	if strings.HasSuffix(path, "GenerateContent") || strings.HasSuffix(path, ":generateContent") {
 		c, err := a.getConfig(r.Context(), r.Header)
 		if err != nil {
 			fail(w, 502, err.Error())
 			return
 		}
-		var selected string
 		b, selected, err = patchRequest(b, c, a.explicit)
 		if err != nil {
 			fail(w, 400, err.Error())
@@ -282,6 +284,11 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if a.onSelection != nil {
 			a.onSelection(selected)
+		}
+		b, safetyPolicy, err = applyGoogleSafety(b, c, selected, a.googleSafetyFile)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
 		}
 	}
 	if r.URL.RawQuery != "" {
@@ -293,6 +300,7 @@ func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+	writeGoogleSafetyReceipt(a.googleSafetyFile, selected, safetyPolicy, resp.StatusCode, b)
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
@@ -326,6 +334,10 @@ func overrideEnv(env []string, overrides map[string]string) []string {
 }
 
 func run() int {
+	if len(os.Args) == 2 && os.Args[1] == "--agy-compat-capabilities" {
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"google_safety_settings_file": 1})
+		return 0
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "agy: cannot locate launcher")
@@ -362,6 +374,13 @@ func run() int {
 	}
 	nonce := hex.EncodeToString(random[:])
 	a := newAdapter(nonce, explicitModel(os.Args[1:]))
+	a.googleSafetyFile = os.Getenv(googleSafetyEnv)
+	if a.googleSafetyFile != "" {
+		if _, err := readGoogleSafetyPolicy(a.googleSafetyFile); err != nil {
+			fmt.Fprintln(os.Stderr, "agy:", err)
+			return 2
+		}
+	}
 	var notice sync.Once
 	a.onSelection = func(name string) { notice.Do(func() { fmt.Fprintln(os.Stderr, "agy: server experience "+name) }) }
 	server := &http.Server{Handler: a, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 64 << 10, ErrorLog: log.New(io.Discard, "", 0)}
