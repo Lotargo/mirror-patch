@@ -17,6 +17,18 @@ from patcher.utils import console, update
 
 
 class ReleasePackagingTests(unittest.TestCase):
+    def test_runtime_fingerprint_is_stable_across_git_line_endings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            source = runtime / "main.go"
+            source.write_bytes(b"package main\nfunc main() {}\n")
+            with patch.object(aicode, "RUNTIME", runtime):
+                expected = aicode.runtime_fingerprint()
+                source.write_bytes(b"package main\r\nfunc main() {}\r\n")
+                self.assertEqual(aicode.runtime_fingerprint(), expected)
+                source.write_bytes(b"package main\nfunc main() { println(1) }\n")
+                self.assertNotEqual(aicode.runtime_fingerprint(), expected)
+
     def test_bundled_launcher_needs_no_compiler_and_rejects_tampering(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory)

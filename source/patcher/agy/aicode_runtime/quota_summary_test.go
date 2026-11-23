@@ -32,3 +32,11 @@ func TestCorrectQuotaSummaryDoesNotInventUnknown(t *testing.T) {
 		t.Fatal("unknown input changed")
 	}
 }
+
+func TestPaidQuotaWindowsRemainAuthoritative(t *testing.T) {
+	raw := []byte(`{"buckets":[{"model":{"modelId":"gemini-3.8-flash"},"remainingFraction":0.95,"resetTime":"2026-11-24T03:29:23Z"}],"quotaSummary":{"groups":[{"buckets":[{"bucketId":"gemini-weekly","remainingFraction":0.99972,"resetTime":"2026-11-30T22:43:45Z","refreshWindowLabel":"weekly"},{"bucketId":"gemini-5h","remainingFraction":0.99888,"resetTime":"2026-11-24T03:43:45Z","refreshWindowLabel":"5h"}]}]}}`)
+	out, err := correctQuotaSummary(raw)
+	if err != nil || string(out) != string(raw) {
+		t.Fatal("paid weekly/5h windows were overwritten by a different model bucket", string(out), err)
+	}
+}

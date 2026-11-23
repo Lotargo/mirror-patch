@@ -33,6 +33,12 @@ func correctQuotaSummary(payload []byte) ([]byte, error) {
 		if json.Unmarshal(g["buckets"], &buckets) != nil {
 			continue
 		}
+		// Paid plans publish separate authoritative weekly and rolling windows.
+		// Legacy per-model counters do not identify those windows and must not
+		// overwrite either their remaining fraction or their reset time.
+		if len(buckets) != 1 {
+			continue
+		}
 		for _, b := range buckets {
 			var id string
 			_ = json.Unmarshal(b["bucketId"], &id)

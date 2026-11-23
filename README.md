@@ -12,7 +12,7 @@
 
 <p align="center">
   <strong>Вход, ответы моделей и загрузка квот в Antigravity.</strong><br />
-  Совместимость с personal AICode и бесплатным тарифом, который предоставляет сервер.
+  Совместимость с personal AICode и сохранение штатного маршрута для Pro.
 </p>
 
 <p align="center">
@@ -31,7 +31,9 @@
 
 MirrorPatch — поддерживаемая редакция патчера Antigravity. Исправляет устаревший путь авторизации и генерации, выбирает experience модели из серверной конфигурации и восстанавливает загрузку квот в CLI, IDE и Antigravity 2.0 / Manager.
 
-> **Выпуск [1.5.0](https://github.com/Lotargo/mirror-patch/releases/tag/v1.5.0).** Native patch v4: Flash Lite, image-experiences и исправленная маршрутизация STT/Voice. Сохранены вход, генерация и квоты в GUI. Неизвестные сборки отклоняются до изменения файлов.
+> **Выпуск [1.6.0](https://github.com/Lotargo/mirror-patch/releases/tag/v1.6.0).** Штатная маршрутизация после отката для Pro, защита от повторного включения AICode, восстановление после автообновления Hub и раздельные окна квоты.
+
+**Есть Google AI Pro и модели работают штатно?** AICode-совместимость устанавливать не нужно. Если ранее установленный launcher мешает Gemini 4, восстановите `manager` и/или `hub` при закрытом приложении. Версия 1.6.0 запомнит выбор штатного backend и не отменит его при автолечении. [Причина и порядок восстановления](docs/pro-native-routing-2026-11-24.md).
 
 В **native patch v4** прямые SDK-вызовы выбирают Flash Lite и image-experiences из серверного каталога. STT и Voice/TTS используют отдельные production-маршруты; неизвестный model ID отклоняется без подстановки. Списки UI не расширяются. Результаты и ограничения Tab — в [отчёте SDK и Voice](docs/sdk-models-and-voice-patch-2026-11-15.md).
 
@@ -96,7 +98,8 @@ $hub = Join-Path $env:USERPROFILE '.gemini/bin/agy.exe'
 | --- | --- |
 | Установка, профили, CLI и откат | [Руководство](docs/manual.md) |
 | Сборка EXE и выпуск | [Порядок релиза](releases/README.md) |
-| Изменения версии 1.5.0 | [Changelog](CHANGELOG.md) |
+| Изменения версии 1.6.0 | [Changelog](CHANGELOG.md) |
+| Google AI Pro, Gemini 4 и окна квоты | [Штатная маршрутизация](docs/pro-native-routing-2026-11-24.md) |
 | Проверка GUI и причина зависания квот | [Отчёт](docs/gui-aicode-and-quota-patch-2026-11-15.md) |
 | Прямой SDK, Flash Lite, image, STT, Voice/TTS и отказ Tab | [Patch v4](docs/sdk-models-and-voice-patch-2026-11-15.md) |
 | Сборка и проверка выпуска 1.5.0 | [Отчёт выпуска](docs/release-1.5.0-2026-11-16.md) |

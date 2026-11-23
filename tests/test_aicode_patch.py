@@ -1,4 +1,5 @@
 import os
+import hashlib
 import json
 import struct
 from pathlib import Path
@@ -87,6 +88,10 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), b"previous installed agy")
         self.assertEqual(historical.read_bytes(), b"historical pristine")
         self.assertEqual(aicode.status(self.target)["state"], "not-installed")
+        from patcher.agy import official
+        self.assertTrue(official.inspect(self.target)["verified"])
+        self.assertEqual(self.install()["state"], "installed")
+        self.assertIsNone(official.inspect(self.target))
 
     def test_tampered_companion_blocks_launch_status_and_restore(self):
         self.install()
@@ -134,6 +139,26 @@ class InstallationTests(unittest.TestCase):
         self.assertEqual(backup.read_bytes(), b"previous installed agy")
         self.assertEqual(aicode.restore(self.target)["state"], "restored")
         self.assertEqual(self.target.read_bytes(), b"previous installed agy")
+
+    def test_upgrade_preserves_updater_recovery_and_refreshes_sidecar(self):
+        self.install()
+        _, _, manifest_path = aicode.paths(self.target)
+        old = json.loads(manifest_path.read_text())
+        old.update(patch_version=1, auto_update_replaced_version="1.5.11", sidecar_synced=True)
+        manifest_path.write_text(json.dumps(old))
+        sidecar = self.target.with_name("agy.version.json")
+        sidecar.write_text(json.dumps({"schemaVersion":1, "version":"1.5.11",
+            "releaseBaseUrl":"https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/release.json",
+            "size":self.target.stat().st_size,
+            "sha512":hashlib.sha512(self.target.read_bytes()).hexdigest()}))
+        with patch.object(aicode, "build_launcher", side_effect=lambda output, _: output.write_bytes(b"new launcher")):
+            self.assertEqual(self.install()["state"], "installed")
+        updated = json.loads(manifest_path.read_text())
+        self.assertEqual(updated["auto_update_replaced_version"], "1.5.11")
+        self.assertTrue(updated["sidecar_synced"])
+        record = json.loads(sidecar.read_text())
+        self.assertEqual(record["sha512"], hashlib.sha512(self.target.read_bytes()).hexdigest())
+        self.assertEqual(record["size"], self.target.stat().st_size)
 
     def test_upgrade_rolls_back_when_launcher_replacement_fails(self):
         self.install()

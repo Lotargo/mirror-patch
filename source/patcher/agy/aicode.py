@@ -76,7 +76,7 @@ def digest(data: bytes) -> str:
 def runtime_fingerprint() -> str:
     files = sorted(p for p in RUNTIME.iterdir()
                    if p.name == "go.mod" or (p.suffix == ".go" and not p.name.endswith("_test.go")))
-    return digest(b"".join(p.name.encode() + b"\0" + p.read_bytes() for p in files))
+    return digest(b"".join(p.name.encode() + b"\0" + p.read_bytes().replace(b"\r\n", b"\n") for p in files))
 
 
 def patch_native(data: bytes, profile="cli") -> bytes:
@@ -193,6 +193,16 @@ def resolve_source(target: Path, profile: str) -> Path:
             os.unlink(temp_name)
 
 
+def _installed_status(target):
+    result = status(target)
+    if result["state"] == "installed":
+        # An explicit compatibility install selects AICode again. Auto-healing
+        # cannot get here for a target whose native routing policy is present.
+        from .official import marker_path
+        marker_path(target).unlink(missing_ok=True)
+    return result
+
+
 def install(target: Path, source: Path | None = None, profile="cli") -> dict:
     target = target.absolute()
     if os.name != "nt":
@@ -207,7 +217,7 @@ def install(target: Path, source: Path | None = None, profile="cli") -> dict:
         if (current["state"] == "installed" and current["patch_version"] == PATCH_VERSION
                 and current.get("profile", "cli") == profile
                 and old_manifest.get("runtime_sha256") == runtime_fingerprint()):
-            return current
+            return _installed_status(target)
         if (current["state"] == "installed" and current.get("profile", "cli") == profile
                 and current["patch_version"] in (1, 2, 3, 4) and PATCH_VERSION == 4):
             upgrading = True
@@ -235,23 +245,38 @@ def install(target: Path, source: Path | None = None, profile="cli") -> dict:
                 "changes": [{"offset": hex(at), "before": old, "after": new}
                             for at, old, new in (MANAGER_PATCHES if profile == "manager" else PATCHES)]}
     if upgrading:
+        from . import official
+        updater_record = None
+        sidecar = target.with_name("agy.version.json")
+        for key in ("auto_update_replaced_version", "sidecar_synced"):
+            if key in old_manifest:
+                manifest[key] = old_manifest[key]
+        if old_manifest.get("sidecar_synced"):
+            if sidecar.is_symlink():
+                raise ValueError("Updater sidecar must be a regular file")
+            updater_record = json.loads(sidecar.read_text("utf-8"))
+            if not official.verify_update_record(target, updater_record, old_manifest.get("auto_update_replaced_version")):
+                raise ValueError("Updater sidecar does not match the installed launcher")
         # Windows maps active executables read-only. Fail before changing any
         # file if a foreground app still owns either executable.
         for executable in (target, native):
             with executable.open("r+b"):
                 pass
-        old_files = {file: file.read_bytes() for file in (native, target, manifest_path)}
+        updates = [(native, patched), (target, launcher)]
+        if updater_record is not None:
+            updates.append((sidecar, lambda: official.sync_update_record(target, updater_record)))
+        updates.append((manifest_path, (json.dumps(manifest, indent=2) + "\n").encode()))
+        old_files = {file: file.read_bytes() for file, _ in updates}
         changed = []
         try:
-            for file, content in ((native, patched), (target, launcher),
-                                  (manifest_path, (json.dumps(manifest, indent=2) + "\n").encode())):
-                atomic_write(file, content)
+            for file, content in updates:
+                atomic_write(file, content() if callable(content) else content)
                 changed.append(file)
         except Exception:
             for file in reversed(changed):
                 atomic_write(file, old_files[file])
             raise
-        return status(target)
+        return _installed_status(target)
     # Install companions first and expose the launcher last. Preserve old .agybak.
     atomic_write(backup, previous)
     try:
@@ -265,19 +290,44 @@ def install(target: Path, source: Path | None = None, profile="cli") -> dict:
         for file in (native, manifest_path, backup):
             file.unlink(missing_ok=True)
         raise
-    return status(target)
+    return _installed_status(target)
 
 
 def restore(target: Path) -> dict:
     target = target.absolute()
-    if status(target)["state"] != "installed":
+    current = status(target)
+    if current["state"] != "installed":
         raise ValueError("Restore requires an intact manifest, launcher, native companion and backup")
     backup, native, manifest_path = paths(target)
-    atomic_write(target, backup.read_bytes())
+    from . import official
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    updated = official.latest_update_backup(target, manifest)
+    restore_source = updated[0] if updated else backup
+    sidecar = target.with_name("agy.version.json")
+    old_sidecar = sidecar.read_bytes() if updated and sidecar.exists() else None
+    launcher_data = target.read_bytes()
+    atomic_write(target, restore_source.read_bytes())
+    try:
+        if updated:
+            record = dict(updated[1])
+            stats = target.stat()
+            record.update(size=stats.st_size, mtimeMs=stats.st_mtime_ns / 1e6, ino=stats.st_ino)
+            atomic_write(sidecar, (json.dumps(record, indent=2) + "\n").encode())
+        official.record(target, current["profile"])
+    except Exception:
+        atomic_write(target, launcher_data)
+        if updated and old_sidecar is not None and sidecar.read_bytes() != old_sidecar:
+            atomic_write(sidecar, old_sidecar)
+        elif updated and old_sidecar is None:
+            sidecar.unlink(missing_ok=True)
+        raise
     # Keep the manifest and companions until the original binary is restored.
     for file in (native, manifest_path, backup):
         file.unlink()
-    return {"state": "restored"}
+    result = {"state": "restored", "prediction_route": "official"}
+    if updated:
+        result["native_version"] = updated[1]["version"]
+    return result
 
 
 def main(args: list[str] | None = None) -> int:

@@ -1,10 +1,12 @@
 """Bounded JSON interface for the portable AGY desktop. Local files only."""
 
 from __future__ import annotations
-import argparse, contextlib, datetime, io, json, os, tempfile
+import argparse, contextlib, datetime, hashlib, io, json, os, re, tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 from patcher import diagnostics
 from patcher.agy import aicode
+from patcher.agy import official
 from patcher.ide import aicode as ide_aicode
 from patcher.utils.runtime import unattended
 
@@ -14,6 +16,46 @@ MODULES = {
     "vscode": ("Расширение VS Code", ["vscode_ext", "vscode_bin"]),
     "cli": ("CLI", ["agy"]),
 }
+
+AUTO_UPDATE_SIDECAR = "agy.version.json"
+AUTO_UPDATE_HOST = "antigravity-cli-auto-updater-974169037036.us-central1.run.app"
+
+
+def auto_update_info(path: Path):
+    """Проверяет, что неизвестный agy.exe это официальное автообновление."""
+    sidecar = path.with_name(AUTO_UPDATE_SIDECAR)
+    try:
+        if path.is_symlink() or sidecar.is_symlink() or sidecar.stat().st_size > 16384:
+            return None
+        data = json.loads(sidecar.read_text("utf-8"))
+        stats = path.stat()
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha512").hexdigest()
+    except (OSError, ValueError, UnicodeError):
+        return None
+    if not isinstance(data, dict) or data.get("schemaVersion") != 1:
+        return None
+    version, size, recorded = data.get("version"), data.get("size"), data.get("sha512")
+    base = data.get("releaseBaseUrl")
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        return None
+    if not isinstance(size, int) or size != stats.st_size:
+        return None
+    if not isinstance(recorded, str) or not re.fullmatch(r"[0-9a-fA-F]{128}", recorded):
+        return None
+    if recorded.lower() != digest.lower():
+        return None
+    if not isinstance(base, str):
+        return None
+    try:
+        origin = urlparse(base)
+        if (origin.scheme != "https" or origin.hostname != AUTO_UPDATE_HOST
+                or origin.username is not None or origin.password is not None
+                or origin.port not in (None, 443)):
+            return None
+    except ValueError:
+        return None
+    return {"version": version, "sha512": recorded, "releaseBaseUrl": base}
 
 
 def native_profile(c):
@@ -39,6 +81,9 @@ def prior_files(path):
 
 
 def native_info(path, profile):
+    policy = official.inspect(path)
+    if policy is not None:
+        return ("not_required" if policy["verified"] else "modified"), False
     backup, native, manifest = aicode.paths(path)
     if manifest.exists():
         data = json.loads(manifest.read_text("utf-8"))
@@ -65,7 +110,7 @@ def native_info(path, profile):
         )
         target_known = aicode.digest(path.read_bytes()) in accepted | {
             data.get("launcher_sha256")
-        }
+        } or auto_update_info(path) is not None
         native_known = not native.exists() or aicode.digest(
             native.read_bytes()
         ) in accepted | set(aicode.PREBUILT_NATIVE_HASHES.get(profile, ()))
@@ -96,6 +141,7 @@ def inspect():
                 "mode",
                 "profile",
                 "shared_with",
+                "prediction_route",
             ]
         }
         c["status"] = original["status"]
@@ -154,8 +200,18 @@ def inspect():
                 c["detail"] = "Целостность файлов подтверждена."
             elif c["status"] == "outdated":
                 c["detail"] = "Есть обновление runtime патча."
+            elif c["status"] == "not_required" and c.get("prediction_route") == "official":
+                c["detail"] = "Используется проверенный штатный backend; AICode-лаунчер не требуется."
             elif c["status"] == "modified":
                 c["detail"] = "Файлы изменились или патч применён частично."
+                if path and c.get("operation") == "native":
+                    auto = auto_update_info(path)
+                    if auto:
+                        c["auto_update_version"] = auto["version"]
+                        c["detail"] = (
+                            f"Официальное автообновление v{auto['version']} перезаписало "
+                            "лаунчер; лечение сохранит его копию и восстановит патч."
+                        )
             elif c["status"] != "not_required" and c["installed"] and not c["can_heal"]:
                 c["detail"] = (
                     "Неизвестная сборка или неполный набор резервных файлов; автоматическая запись запрещена."
@@ -223,7 +279,7 @@ def transaction(updates):
     changed = []
     try:
         for path, data in updates:
-            aicode.atomic_write(path, data)
+            aicode.atomic_write(path, data() if callable(data) else data)
             changed.append(path)
     except Exception:
         for path in reversed(changed):
@@ -235,6 +291,8 @@ def transaction(updates):
 
 
 def repair_native(path, profile):
+    if official.inspect(path) is not None:
+        raise ValueError("Выбран штатный маршрут. Автоматическая установка AICode-лаунчера запрещена.")
     backup, native, manifest_path = aicode.paths(path)
     if not manifest_path.exists() or aicode.status(path)["state"] == "installed":
         return aicode.install(path, profile=profile)
@@ -256,13 +314,39 @@ def repair_native(path, profile):
         launcher_sha256=aicode.digest(launcher_data),
         runtime_sha256=aicode.runtime_fingerprint(),
     )
-    transaction(
-        [
-            (native, native_data),
-            (path, launcher_data),
-            (manifest_path, (json.dumps(old, indent=2) + "\n").encode()),
-        ]
-    )
+    updates = [
+        (native, native_data),
+        (path, launcher_data),
+        (manifest_path, (json.dumps(old, indent=2) + "\n").encode()),
+    ]
+    auto = auto_update_info(path)
+    if auto:
+        # Сохраняем официальный бинарник и его sidecar до замены, чтобы
+        # автообновление можно было вернуть без повторной загрузки.
+        stamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+        suffix = f".before-heal-{auto['version']}-{stamp}"
+        atomic = aicode.atomic_write
+        atomic(path.with_name(path.name + suffix), path.read_bytes())
+        sidecar = path.with_name(AUTO_UPDATE_SIDECAR)
+        sidecar_data = sidecar.read_bytes()
+        atomic(path.with_name(sidecar.name + suffix), sidecar_data)
+
+        def synced_sidecar():
+            record = json.loads(sidecar_data)
+            stats = path.stat()
+            with path.open("rb") as stream:
+                sha512 = hashlib.file_digest(stream, "sha512").hexdigest()
+            record.update(
+                size=stats.st_size, mtimeMs=stats.st_mtime_ns / 1e6,
+                ino=stats.st_ino, sha512=sha512,
+            )
+            return (json.dumps(record, indent=2) + "\n").encode()
+
+        updates.append((sidecar, synced_sidecar))
+        old["auto_update_replaced_version"] = auto["version"]
+        old["sidecar_synced"] = True
+        updates[2] = (manifest_path, (json.dumps(old, indent=2) + "\n").encode())
+    transaction(updates)
     return aicode.status(path)
 
 

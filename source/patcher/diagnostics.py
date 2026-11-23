@@ -9,6 +9,7 @@ from patcher.manager.discovery import find_manager_binary, get_antigravity_versi
 from patcher.manager.patcher import get_status as manager_status
 from patcher.agy.discovery import find_agy_binary
 from patcher.agy.patcher import get_status as agy_status
+from patcher.agy import official
 from patcher.hub.profile import inspect_backend as inspect_hub_backend
 from patcher.vscode.discovery import (
     find_extension_dir, inspect_extension_dir, inspect_extension_path, find_bundled_extension_dir,
@@ -77,6 +78,14 @@ def _inspect_binary(component, path, scanner, cache):
     # Найденный/выбранный файл может исчезнуть при обновлении до первого чтения.
     component["required"] = True
     component["installed"] = os.path.isfile(path)
+    policy = official.inspect(path)
+    if policy is not None:
+        component["prediction_route"] = "official"
+        component["file_status"] = "official" if policy["verified"] else "changed"
+        _state(component, "not_applicable" if policy["verified"] else "unsupported")
+        component["can_apply"] = False
+        component["reason"] = policy["detail"]
+        return
     key = (os.path.normcase(os.path.realpath(path)), scanner)
     if key not in cache:
         cache[key] = scanner(path, strict=True)[0]

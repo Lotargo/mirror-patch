@@ -1,5 +1,6 @@
 """Repair contracts use temporary files; installed applications are never changed."""
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -52,6 +53,84 @@ class DesktopHelperTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     helper.repair_native(target, "cli")
                 self.assertEqual(target.read_bytes(), b"unknown upgrade")
+
+    def test_verified_auto_update_is_healed_with_recovery_and_sidecar_sync(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "agy.exe"
+            backup, native, manifest = helper.aicode.paths(target)
+            original, patched, launcher = b"original", b"native patched", b"launcher"
+            upgraded = b"official auto update"
+            sidecar = target.with_name(helper.AUTO_UPDATE_SIDECAR)
+            record = {
+                "schemaVersion": 1, "version": "1.5.11", "size": len(upgraded),
+                "mtimeMs": 1, "ino": 1, "installedAt": 1,
+                "sha512": hashlib.sha512(upgraded).hexdigest(),
+                "releaseBaseUrl": f"https://{helper.AUTO_UPDATE_HOST}/manifests/windows_amd64.json",
+            }
+            target.write_bytes(upgraded)
+            sidecar.write_text(json.dumps(record))
+            backup.write_bytes(original)
+            native.write_bytes(patched)
+            manifest.write_text(json.dumps({
+                "profile": "hub", "patch_version": 4,
+                "previous_sha256": helper.aicode.digest(original),
+                "native_sha256": helper.aicode.digest(patched),
+                "launcher_sha256": helper.aicode.digest(launcher),
+                "runtime_sha256": "old",
+            }))
+
+            def build(output, *args, **kwargs):
+                output.write_bytes(launcher)
+
+            with (
+                patch.object(helper.aicode, "SOURCE_SHA256", helper.aicode.digest(original)),
+                patch.object(helper.aicode, "PREBUILT_NATIVE_HASHES",
+                             {"hub": (helper.aicode.digest(patched),)}),
+                patch.object(helper.aicode, "runtime_fingerprint", return_value="new"),
+                patch.object(helper.aicode, "build_launcher", side_effect=build),
+            ):
+                self.assertEqual(helper.native_info(target, "hub"), ("modified", True))
+                self.assertEqual(helper.auto_update_info(target)["version"], "1.5.11")
+                result = helper.repair_native(target, "hub")
+                self.assertEqual(result["state"], "installed")
+            self.assertEqual(target.read_bytes(), launcher)
+            recovered = json.loads(sidecar.read_text())
+            self.assertEqual(recovered["version"], "1.5.11")
+            self.assertEqual(recovered["size"], len(launcher))
+            self.assertEqual(recovered["sha512"], hashlib.sha512(launcher).hexdigest())
+            metadata = json.loads(manifest.read_text())
+            self.assertEqual(metadata["auto_update_replaced_version"], "1.5.11")
+            self.assertTrue(metadata["sidecar_synced"])
+            backups = [p for p in Path(directory).glob("*.before-heal-*")]
+            self.assertEqual(len(backups), 2)
+            self.assertIn(upgraded, [p.read_bytes() for p in backups])
+
+    def test_unverified_auto_update_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "agy.exe"
+            backup, native, manifest = helper.aicode.paths(target)
+            upgraded = b"forged update"
+            sidecar = target.with_name(helper.AUTO_UPDATE_SIDECAR)
+            target.write_bytes(upgraded)
+            sidecar.write_text(json.dumps({
+                "schemaVersion": 1, "version": "1.5.11", "size": len(upgraded),
+                "sha512": hashlib.sha512(upgraded).hexdigest(),
+                "releaseBaseUrl": "https://evil.example/release.json",
+            }))
+            backup.write_bytes(b"original")
+            native.write_bytes(b"native patched")
+            manifest.write_text(json.dumps({
+                "profile": "hub", "patch_version": 4,
+                "previous_sha256": helper.aicode.digest(b"original"),
+                "native_sha256": helper.aicode.digest(b"native patched"),
+                "launcher_sha256": helper.aicode.digest(b"launcher"),
+                "runtime_sha256": "old",
+            }))
+            self.assertIsNone(helper.auto_update_info(target))
+            self.assertEqual(helper.native_info(target, "hub"), ("modified", False))
+            with self.assertRaises(ValueError):
+                helper.repair_native(target, "hub")
+            self.assertEqual(target.read_bytes(), upgraded)
 
     def test_transaction_rolls_back_write_failure(self):
         with tempfile.TemporaryDirectory() as directory:
